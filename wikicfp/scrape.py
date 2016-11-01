@@ -7,19 +7,23 @@ import time
 ROOT_URL = 'http://www.wikicfp.com/cfp/call?conference=computer%20science&page={}' # called with .format(<page number>)
 SINGLE_URL = 'http://www.wikicfp.com/cfp/servlet/event.showcfp?eventid={}&copyownerid={}' # called with .format(<eventid>, <copyownerid>)
 
+OUT_FILE = None
+
 def scrape_page(html):
+   global OUT_FILE
+   f = OUT_FILE
    m = re.search('Link: <a href="([^"]+)"', html)
-   print 'Link: {}'.format(m.group(1))
+   f.write('Link: {}\n'.format(m.group(1)))
    m = re.search('<th>When</th>\s*<td align="center">([^<]+)</td>', html)
-   print 'When: {}'.format(m.group(1).strip())
+   f.write('When: {}\n'.format(m.group(1).strip()))
    m = re.search('<th>Where</th>\s*<td align="center">([^<]+)</td>', html)
-   print 'Where: {}'.format(m.group(1).strip())
+   f.write('Where: {}\n\n'.format(m.group(1).strip()))
 
 def scrape_page_list(html):
    m = re.findall('event\.showcfp\?eventid=([0-9]+)&amp;copyownerid=([0-9]+)', html)
    for l in m:
+      print 'Working ...'
       r = requests.get(SINGLE_URL.format(l[0], l[1]))
-      time.sleep(1)
       scrape_page(r.text)
 
 def scrape():
@@ -37,7 +41,10 @@ def scrape():
    scrape_page_list(html)
 
 def main():
+   global OUT_FILE
+   OUT_FILE = open('output.txt', 'w')
    scrape()
+   OUT_FILE.close()
 
 if __name__ == '__main__':
    main()
