@@ -20,6 +20,7 @@ class ConferenceExtractorBase:
         self.topics = None
         self.email = None
         self.submissionLink = None
+        self.importantLinks = []
         self.isValidDocument = False
         if html is not None:
             self.webpage = BeautifulSoup(html, 'html.parser')
@@ -31,8 +32,9 @@ class ConferenceExtractorBase:
 
     def __str__(self):
         return '<ConferenceExtractor:\ntopics=[{}]\nlocation={}\ndates=[{}]' \
-               '\nconferences=[{}]\nemail={}\nsubmissionLink={}>'.format(
-            self.topics, self.location, self.dates, self.conference, self.email, self.submissionLink
+               '\nconferences=[{}]\nemail={}\nsubmissionLink={}\nimportantLinks={}>'.format(
+            self.topics, self.location, self.dates, self.conference, self.email,
+            self.submissionLink, self.importantLinks
         )
 
 

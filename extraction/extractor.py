@@ -5,6 +5,7 @@ from bs4.element import Tag
 from nltk.tag import StanfordNERTagger
 from nltk.corpus import wordnet as wn
 from functools import reduce
+from urllib.parse import urljoin
 from baseline import ConferenceExtractorBase
 
 months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november',
@@ -70,6 +71,8 @@ class EventExtractor(ConferenceExtractorBase):
             linkLabel = link['label']
             if self.submissionLink is None and linkLabel == 'submissionDate':
                 self.submissionLink = link['url']
+            elif linkLabel == 'faq':
+                self.importantLinks.append(link['url'])
             elif linkLabel == 'email':
                 self.email.append(label_email_feature(link))
 
@@ -107,8 +110,8 @@ class EventExtractor(ConferenceExtractorBase):
                + self.webpage.find_all('header')
 
     def _get_labeled_links(self):
-        #  TODO: Find links to FAQs and label as faq
         submission = ['submit', 'submission']
+        faqs = ['faq', 'f.a.q.', 'frequently asked questions']
         emailPattern = re.compile(r'(^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$)')
         linkFeatures = []
         for link in self.webpage.find_all('a'):
@@ -119,7 +122,10 @@ class EventExtractor(ConferenceExtractorBase):
                 url = link['href']
                 if any(word in text.lower() for word in submission):
                     label = 'submissionDate'
-                    url = self._reconstruct_relative_url(url)
+                    url = urljoin(self.url, url)
+                elif any(word in text.lower() for word in faqs):
+                    label = 'faq'
+                    url = urljoin(self.url, url)
                 elif emailPattern.match(url):
                     label = 'email'
                     url = format_email(url)
@@ -247,23 +253,6 @@ class EventExtractor(ConferenceExtractorBase):
             firstEmail = emails[0]
 
         return firstEmail
-
-    def _reconstruct_relative_url(self, url: str):
-        if is_relative_url(url):
-            splitUrl = re.split(r'https?://', self.url)
-            if len(splitUrl) >= 2:
-                baseUrl = splitUrl[1]
-                if not baseUrl.endswith('/'):
-                    
-                if not url.startswith('/') and not self.url.endswith('/'):
-                    url = '/' + url
-                elif url.startswith('/') and self.url.endswith('/'):
-                    url = url[1:]
-                url = self.url + url
-            else:
-                raise ValueError('Invalid URL: {}'.format(url))
-        return url
-
 
 def get_sibling_tag(siblings: list):
     sibling = None
