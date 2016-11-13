@@ -18,7 +18,6 @@ Fields:
 
 
 class BaselineExtractor:
-    # TODO: Add basic email extractor: extracts first email matching regex
     def __init__(self, htmlFilePath):
         soup = BeautifulSoup(open(htmlFilePath), 'html.parser')
         txt = soup.body.get_text()
