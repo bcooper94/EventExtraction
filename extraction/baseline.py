@@ -18,6 +18,7 @@ Fields:
 
 
 class BaselineExtractor:
+    # TODO: Add basic email extractor: extracts first email matching regex
     def __init__(self, htmlFilePath):
         soup = BeautifulSoup(open(htmlFilePath), 'html.parser')
         txt = soup.body.get_text()
@@ -30,13 +31,18 @@ class BaselineExtractor:
         # ner = st.tag(words)
         namedEntities = stanfordTagger.tag(tokenizedText)
         namedEntities = [entity for entity in namedEntities if entity[1] != 'O']
-        print(namedEntities)
+
+        # Found on http://emailregex.com/
+        self.email = self._extract_first_email(txt)
 
         # TODO: Extract organization from the page's copyright notice in our actual event extractor?
-        organizations = [tag for tag in namedEntities if tag[1] == 'ORGANIZATION']
+        # organizations = [tag for tag in namedEntities if tag[1] == 'ORGANIZATION']
         self.people = [tag for tag in namedEntities if tag[1] == 'PERSON']
-        self.location = self._extract_first_entity(namedEntities, 'LOCATION')
-        print(organizations)
+
+        # Location: take the first entity tagged with LOCATION
+        locations = self._extract_first_entity(namedEntities, 'LOCATION')
+        if len(locations) > 0:
+            self.location = locations[0]
 
         # Text = nltk.Text(tokenizedText)
         # conference = ['conference', 'association']
@@ -47,7 +53,9 @@ class BaselineExtractor:
         host = ['host']
 
         dates = self._extract_dates(txt)
-        self.conference = self._extract_first_entity(namedEntities, 'ORGANIZATION')
+        conferences = self._extract_first_entity(namedEntities, 'ORGANIZATION')
+        if len(conferences) > 0:
+            self.conference = conferences[0]
         self.topics = self._extract_topics(soup.body)
         # print(label_entities(txt, organizations))
 
@@ -84,7 +92,7 @@ class BaselineExtractor:
             # Only start search for lists of topics if "topics" is present, as in white paper
             if element.string is not None and 'topics' in str(element.string).lower():
                 return self._get_topic_list(element)
-        return []
+        return None
 
     def _get_topic_list(self, soup: BeautifulSoup):
         topics = []
@@ -97,7 +105,7 @@ class BaselineExtractor:
         labeled_entities = []
 
         for entity in entities:
-            print(entity)
+            # print(entity)
             context = self._get_context(text, entity).lower()
             if ':' in context:
                 context = context[:context.find(':')]
@@ -126,7 +134,7 @@ class BaselineExtractor:
 
     # use a bunch of awful regexes to recognize some shitty dates off these damn sites
     def _extract_dates(self, text):
-        dates = re.findall(r'(\d+/\d+/\d+)', text)  # '12/30/1994 and another one 5/23/16')
+        dates = re.findall(r'(\d+/\d+/\d+)', text)  # '12/30/1994 and anstr(other one) 5/23/16')
         dates += re.findall(r'(\d+.*-\d+.*(([Jj]anuary)|([Ff]ebruary])|([Mm]arch)|([Aa]pril)|([Mm]ay)|([Jj]une)|'
                             r'([Jj]uly)|([Aa]ugust)|([Ss]eptember)|([Oo]ctober)|([Nn]ovember)|([Dd]ecember))'
                             r'\d*)', text)
@@ -153,6 +161,15 @@ class BaselineExtractor:
 
         return set(dates)
 
+    def _extract_first_email(self, text):
+        firstEmail = None
+        pattern = re.compile(r'(^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$)')
+        emails = pattern.findall(text)
+        if len(emails) > 0:
+            firstEmail = emails[0]
+
+        return firstEmail
+
 
 # soup = BeautifulSoup(open('cfp/Trusted Smart Contracts 2017.html'), 'html.parser')
 # soup = BeautifulSoup(open('cfp/Corpus Historicus – The Body in_of History.html'), 'html.parser')
@@ -162,14 +179,12 @@ class BaselineExtractor:
 # soup = BeautifulSoup(open('resources/history.html'), 'html.parser')
 # soup = BeautifulSoup(open('resources/embedded.html'), 'html.parser')
 # soup = BeautifulSoup(open('resources/workshop2016.iwslt.org.html'), 'html.parser')
-doc = BaselineExtractor('resources/airccse.html')
+# doc = BaselineExtractor('resources/airccse.html')
+doc = BaselineExtractor('resources/iMT 2016.html')
 
-if len(doc.topics) > 0:
-    print('TOPICS: ', doc.topics)
-else:
-    print('No topics found.')
-
-print('LOCATION:', doc.location)
-print('PEOPLE:', doc.people)
-print('DATES:', doc.dates)
-print('CONFERENCE:', doc.conference)
+print('Topics: ', doc.topics)
+print('Conference location:', doc.location)
+# print('PEOPLE:', doc.people)
+print('Date:', doc.dates)
+print('Conference name:', doc.conference)
+print('Conference email:', doc.email)
