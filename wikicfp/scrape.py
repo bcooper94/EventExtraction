@@ -49,6 +49,7 @@ def scrape_category(category):
       scrape_page_list(r.text)
 
 def scrape():
+   global ROOT_URL
    r = requests.get(ROOT_URL)
    soup = bs4.BeautifulSoup(r.text, 'html.parser')
    categories = map(lambda link: link.get_text(), soup.find_all('table')[3].find_all('a'))
