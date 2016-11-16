@@ -15,7 +15,17 @@ EXISTS = {}
 def scrape_page(html):
    global DATABASE, EXISTS
   
-   data = {}
+   data = {
+      'name': None,
+      'start': None,
+      'stop': None,
+      'submission deadline': None,
+      'notification due': None,
+      'final version due': None,
+      'link': None,
+      'html': None,
+      'categories': None
+   }
  
    soup = bs4.BeautifulSoup(html, 'html.parser')
 
