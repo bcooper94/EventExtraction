@@ -1,33 +1,42 @@
 import nltk
 import re
+import json
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 from nltk.tag import StanfordNERTagger
+from functools import reduce
 
 months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november',
           'december', 'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec']
 
-'''
-Fields:
-    people
-    location
-    dates
-    conference
-    topics
-'''
+
+class ConferenceExtractorBase:
+    def __init__(self):
+        self.people = None
+        self.location = None
+        self.dates = None
+        self.conference = None
+        self.topics = None
+        self.email = None
+        self.isValidDocument = False
+
+    def __str__(self):
+        return 'ConferenceExtractorBase'
 
 
-class BaselineExtractor:
-    def __init__(self, htmlFilePath):
-        soup = BeautifulSoup(open(htmlFilePath), 'html.parser')
-        txt = soup.body.get_text()
+class BaselineExtractor(ConferenceExtractorBase):
+    def __init__(self, html):
+        ConferenceExtractorBase.__init__(self)
+        soup = BeautifulSoup(html, 'html.parser')
+        if soup.body is not None:
+            txt = soup.body.get_text()
+            self.isValidDocument = True
+        else:
+            self.isValidDocument = False
+            return
 
         tokenizedText = nltk.word_tokenize(txt)
-        # words = [word for word in text if word.lower() not in stopwords.words('english') and word.strip()]
-        # pos = nltk.pos_tag(words)
-        # print(words)
         stanfordTagger = StanfordNERTagger('english.all.3class.distsim.crf.ser.gz')
-        # ner = st.tag(words)
         namedEntities = stanfordTagger.tag(tokenizedText)
         namedEntities = [entity for entity in namedEntities if entity[1] != 'O']
 
@@ -39,24 +48,19 @@ class BaselineExtractor:
         self.people = [tag for tag in namedEntities if tag[1] == 'PERSON']
 
         # Location: take the first entity tagged with LOCATION
-        locations = self._extract_first_entity(namedEntities, 'LOCATION')
-        if len(locations) > 0:
-            self.location = locations[0]
-
-        # Text = nltk.Text(tokenizedText)
-        # conference = ['conference', 'association']
+        location = self._extract_first_entity(namedEntities, 'LOCATION')
+        if len(location) > 0:
+            self.location = location
 
         abstractDate = ['abstract', 'summary', 'proposal']
         paperDate = ['paper', 'final']
         conferenceDate = ['conference', 'event', 'time', 'held', 'hosted']
-        host = ['host']
 
         dates = self._extract_dates(txt)
-        conferences = self._extract_first_entity(namedEntities, 'ORGANIZATION')
-        if len(conferences) > 0:
-            self.conference = conferences[0]
+        conference = self._extract_first_entity(namedEntities, 'ORGANIZATION')
+        if len(conference) > 0:
+            self.conference = conference
         self.topics = self._extract_topics(soup.body)
-        # print(label_entities(txt, organizations))
 
         self.dates = {}
         if len(dates) == 1:
@@ -65,11 +69,9 @@ class BaselineExtractor:
             dates = self._label_entities(txt, self._extract_dates(txt), [abstractDate, paperDate, conferenceDate])
             for date, key in dates:
                 self.dates[key] = date
-                # for date in dates:
-                #     print(get_context(txt, date, 20))
 
-    # ner = nltk.ne_chunk(pos)
-    # print(ner)
+    def __str__(self):
+        return '<BaselineExtractor conference={} location={}>'.format(self.conference, self.location)
 
     def _extract_first_entity(self, ner, entity):
         start = False
@@ -80,10 +82,9 @@ class BaselineExtractor:
                 break
 
             start = tag[1] == entity
-
             if start:
-                entities += tag
-        return entities
+                entities.append(tag[0])
+        return reduce(lambda string, entity: '{} {}'.format(string, entity), entities)
 
     # Baseline topics extractor: only look for a list of topics after the keyword "topics"
     def _extract_topics(self, soup: BeautifulSoup):
@@ -94,7 +95,7 @@ class BaselineExtractor:
         return None
 
     def _get_topic_list(self, soup: BeautifulSoup):
-        topics = []
+        topics = None
         list = soup.find_next_sibling('ol') or soup.find_next_sibling('ul')
         if list is not None:
             topics = [element.string for element in list.contents if type(element) is Tag]
@@ -179,11 +180,14 @@ class BaselineExtractor:
 # soup = BeautifulSoup(open('resources/embedded.html'), 'html.parser')
 # soup = BeautifulSoup(open('resources/workshop2016.iwslt.org.html'), 'html.parser')
 # doc = BaselineExtractor('resources/airccse.html')
-doc = BaselineExtractor('resources/iMT 2016.html')
+# doc = BaselineExtractor('resources/iMT 2016.html')
 
-print('Topics: ', doc.topics)
-print('Conference location:', doc.location)
-# print('PEOPLE:', doc.people)
-print('Date:', doc.dates)
-print('Conference name:', doc.conference)
-print('Conference email:', doc.email)
+print('BASELINE')
+with open('resources/iMT 2016.html') as file:
+    doc = BaselineExtractor(file.read())
+    print('Topics: ', doc.topics)
+    print('Conference location:', doc.location)
+    # print('PEOPLE:', doc.people)
+    print('Date:', doc.dates)
+    print('Conference name:', doc.conference)
+    print('Conference email:', doc.email)
