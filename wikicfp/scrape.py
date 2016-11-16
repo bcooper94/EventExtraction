@@ -10,29 +10,52 @@ ROOT_URL = 'http://www.wikicfp.com/cfp/allcat'
 CATEGORY_URL = 'http://www.wikicfp.com/cfp/call?conference={}&page={}' # called with .format(<page number>)
 PAGE_URL = 'http://www.wikicfp.com/cfp/servlet/event.showcfp?eventid={}&copyownerid={}' # called with .format(<eventid>, <copyownerid>)
 DATABASE = []
+EXISTS = {}
 
 def scrape_page(html):
-   global DATABASE
+   global DATABASE, EXISTS
+  
    data = {}
-   m = re.search('<span property="v:description">([^<]+)</span>', html)
-   if m and m.group(1):
-      data['name'] = m.group(1).strip()
+ 
+   soup = bs4.BeautifulSoup(html, 'html.parser')
+
+   name = soup.find('h2').get_text().strip()
+   data['name'] = name
+
+   # check for duplicates
+   if name in EXISTS:
+      return
+  
+   tables = soup.find_all('table')
+
+
+   for r in tables[8].find_all('tr'):
+      key = r.find('th').get_text().lower().strip()
+      value = r.find('td').get_text().strip()
+      if key == 'when':
+         when = value.split('-')
+         if len(when) == 2:
+            data['start'] = when[0] 
+            data['stop'] = when[1]
+      else:
+         if 'N/A' in value:
+            data[key] = None
+         else:
+            data[key] = value
+
+   data['categories'] = []
+   for r in tables[9].find_all('a')[1:]:
+      data['categories'].append(r.get_text().strip())
+
    m = re.search('Link: <a href="([^"]+)"', html)
-   if m and m.group(1):
-      data['link'] = m.group(1).strip()
-   m = re.search('<th>When</th>\s*<td align="center">([^<]+)</td>', html)
-   if m and m.group(1):
-      data['when'] = m.group(1).strip()
-   m = re.search('<th>Where</th>\s*<td align="center">([^<]+)</td>', html)
-   if m and m.group(1):
-      data['where'] = m.group(1).strip()
-   data['html'] = '' 
-   print(data['link'])
-   if data['link']:
-      r = requests.get(data['link'])
-      print(r.status_code)
-      if r.status_code == 200:
-         data['html'] = r.text  
+   data['link'] = m.group(1)
+   r = requests.get(data['link'])
+   data['html'] = None
+   print(data['link'], r.status_code)
+   if r.status_code == 200:
+      data['html'] = r.text
+
+   EXISTS[name] = 1
    DATABASE.append(data)
 
 def scrape_page_list(html):
