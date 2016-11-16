@@ -52,7 +52,7 @@ def scrape_page(html):
    r = requests.get(data['link'])
    data['html'] = None
    print(data['link'], r.status_code)
-   if r.status_code == 200:
+   if r.status_code == 200 and r.headers['content-type'] != 'application/pdf':
       data['html'] = r.text
 
    EXISTS[name] = 1
