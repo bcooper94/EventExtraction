@@ -21,17 +21,14 @@ Fields:
 
 
 class EventExtractor(ConferenceExtractorBase):
-    def __init__(self, html):
-        ConferenceExtractorBase.__init__(self)
-        soup = BeautifulSoup(html, 'html.parser')
-        txt = soup.body.get_text()
+    def __init__(self, html, url):
+        ConferenceExtractorBase.__init__(self, html, url)
+        if not self.isValidDocument:
+            return
 
+        txt = self.webpage.body.get_text()
         tokenizedText = nltk.word_tokenize(txt)
-        # words = [word for word in text if word.lower() not in stopwords.words('english') and word.strip()]
-        # pos = nltk.pos_tag(words)
-        # print(words)
         stanfordTagger = StanfordNERTagger('english.all.3class.distsim.crf.ser.gz')
-        # ner = st.tag(words)
         namedEntities = stanfordTagger.tag(tokenizedText)
         namedEntities = [entity for entity in namedEntities if entity[1] != 'O']
 
@@ -45,7 +42,6 @@ class EventExtractor(ConferenceExtractorBase):
         # Location: take the first entity tagged with LOCATION
         self.location = self._extract_first_entity(namedEntities, 'LOCATION')
 
-        # Text = nltk.Text(tokenizedText)
         # conference = ['conference', 'association']
 
         abstractDate = ['abstract', 'summary', 'proposal']
@@ -53,13 +49,13 @@ class EventExtractor(ConferenceExtractorBase):
         conferenceDate = ['conference', 'event', 'time', 'held', 'hosted']
         host = ['host']
 
-        dates = self._extract_dates(txt)
         conference = self._extract_first_entity(namedEntities, 'ORGANIZATION')
-        if len(conference) > 0:
+        if conference is not None and len(conference) > 0:
             self.conference = conference
-        self.topics = self._extract_topics(soup.body)
+        self.topics = self._extract_topics(self.webpage.body)
 
         self.dates = {}
+        dates = self._extract_dates(txt)
         if len(dates) == 1:
             self.dates = {'conference': list(dates)[0]}
         else:
@@ -68,16 +64,19 @@ class EventExtractor(ConferenceExtractorBase):
                 self.dates[key] = date
                 # for date in dates:
                 #     print(get_context(txt, date, 20))
-
-    # ner = nltk.ne_chunk(pos)
-    # print(ner)
-
-    def __str__(self):
-        return '<ConferenceExtractor conference={} locations=[{}]>'.format(self.conference, self.location)
+        labeledLinks = self._get_labeled_links()
+        self.email = []
+        for link in labeledLinks:
+            linkLabel = link['label']
+            if self.submissionLink is None and linkLabel == 'submissionDate':
+                self.submissionLink = link['url']
+            elif linkLabel == 'email':
+                self.email.append(label_email_feature(link))
 
     def _extract_first_entity(self, ner, entity):
         start = False
         entities = []
+        firstEntity = None
 
         for tag in ner:
             if start and tag[1] != entity:
@@ -86,7 +85,83 @@ class EventExtractor(ConferenceExtractorBase):
             start = tag[1] == entity
             if start:
                 entities.append(tag[0])
-        return reduce(lambda string, entity: '{} {}'.format(string, entity), entities)
+        if len(entities) > 0:
+            firstEntity = reduce(lambda string, entity: '{} {}'.format(string, entity), entities)
+        return firstEntity
+
+    def get_lists(self):
+        lists = self.webpage.find_all('li')
+        featureList = []
+        for li in lists:
+            featureList.append({
+                'listName': li.get_text(),
+                'contents': [element for element in li.recursiveChildGenerator()],
+                'prevSibling': get_sibling_tag([sib for sib in li.previous_siblings]),
+                'nextSibling': get_sibling_tag([sib for sib in li.next_siblings])
+            })
+        return featureList
+
+    def get_headers(self):
+        return self.webpage.find_all('h1') + self.webpage.find_all('h2') + self.webpage.find_all('h3') \
+               + self.webpage.find_all('h4') + self.webpage.find_all('h5') + self.webpage.find_all('h6') \
+               + self.webpage.find_all('header')
+
+    def _get_labeled_links(self):
+        #  TODO: Find links to FAQs and label as faq
+        submission = ['submit', 'submission']
+        emailPattern = re.compile(r'(^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$)')
+        linkFeatures = []
+        for link in self.webpage.find_all('a'):
+            if 'href' in link.attrs:
+                prevSibling = get_sibling_tag([sib for sib in link.previous_siblings]),
+                nextSibling = get_sibling_tag([sib for sib in link.next_siblings])
+                text = link.get_text()
+                url = link['href']
+                if any(word in text.lower() for word in submission):
+                    label = 'submissionDate'
+                    url = self._reconstruct_relative_url(url)
+                elif emailPattern.match(url):
+                    label = 'email'
+                    url = format_email(url)
+                elif emailPattern.match(text):
+                    label = 'email'
+                    url = format_email(text)
+                else:
+                    label = 'unknown'
+                linkFeatures.append({
+                    'url': url,
+                    'text': text,
+                    'tag': link,
+                    'prevSibling': prevSibling,
+                    'nextSibling': nextSibling,
+                    'parent': link.parent,
+                    'label': label
+                })
+
+        return linkFeatures
+
+    def recursive_walk(self):
+        if self.webpage.body is None:
+            return None
+
+        dateTimeAttrs = []
+        locationAttrs = []
+        headers = []
+        links = []
+        dateKeywords = ['time', 'date', 'datetime', 'when']
+        locationKeywords = ['conference', 'location', 'place', 'locale', 'venue']
+        for child in self.webpage.body.recursiveChildGenerator():
+            if type(child) is Tag:
+                for attribute in child.attrs:
+                    if child.name == 'a':
+                        links.append(child)
+                    if any(word in attribute for word in dateKeywords):
+                        dateTimeAttrs.append(child)
+                    if child.name is not None and child.name.startswith('h'):
+                        headers.append({'tag': child.name, 'text': child.text})
+                    elif any(word in attribute for word in locationKeywords):
+                        locationAttrs.append(child)
+        return {'dates': dateTimeAttrs, 'locations': locationAttrs, 'links': links, 'headers': headers}
 
     # Baseline topics extractor: only look for a list of topics after the keyword "topics"
     def _extract_topics(self, soup: BeautifulSoup):
@@ -108,11 +183,11 @@ class EventExtractor(ConferenceExtractorBase):
         labeled_entities = []
 
         for entity in entities:
-            # print(entity)
+            if type(entity) is tuple:
+                entity = entity[0]
             context = self._get_context(text, entity).lower()
             if ':' in context:
                 context = context[:context.find(':')]
-            # print('context:  ' + context)
             for labelList in entity_labels:
                 seen = False
                 for label in labelList:
@@ -173,37 +248,77 @@ class EventExtractor(ConferenceExtractorBase):
 
         return firstEmail
 
+    def _reconstruct_relative_url(self, url: str):
+        if is_relative_url(url):
+            splitUrl = re.split(r'https?://', self.url)
+            if len(splitUrl) >= 2:
+                baseUrl = splitUrl[1]
+                if not baseUrl.endswith('/'):
+                    
+                if not url.startswith('/') and not self.url.endswith('/'):
+                    url = '/' + url
+                elif url.startswith('/') and self.url.endswith('/'):
+                    url = url[1:]
+                url = self.url + url
+            else:
+                raise ValueError('Invalid URL: {}'.format(url))
+        return url
 
-# soup = BeautifulSoup(open('cfp/Trusted Smart Contracts 2017.html'), 'html.parser')
-# soup = BeautifulSoup(open('cfp/Corpus Historicus – The Body in_of History.html'), 'html.parser')
-# soup = BeautifulSoup(open('cfp/Call For Papers – ERA Track _ SANER 2017.html'), 'html.parser')
-# soup = BeautifulSoup(open('resources/era_track.html'), 'html.parser')
-# soup = BeautifulSoup(open('resources/smart_contracts.html'), 'html.parser')
-# soup = BeautifulSoup(open('resources/history.html'), 'html.parser')
-# soup = BeautifulSoup(open('resources/embedded.html'), 'html.parser')
-# soup = BeautifulSoup(open('resources/workshop2016.iwslt.org.html'), 'html.parser')
-# doc = EventExtractor('resources/airccse.html')
-# doc = EventExtractor('resources/iMT 2016.html')
-print('-----------------------------')
-print('REAL EXTRACTOR')
-with open('resources/iMT 2016.html') as file:
-    doc = EventExtractor(file.read())
-    print('Topics: ', doc.topics)
-    print('Conference location:', doc.location)
-    # print('PEOPLE:', doc.people)
-    print('Date:', doc.dates)
-    print('Conference name:', doc.conference)
-    print('Conference email:', doc.email)
 
-# print('Topics: ', doc.topics)
-# print('Conference location:', doc.locations)
-# print('PEOPLE:', doc.people)
-# print('Date:', doc.dates)
-# print('Conference name:', doc.conferences)
-# print('Conference email:', doc.email)
-# topicSyn = wn.synset('topic.n.02')
-# print(topicSyn)
-# print('Hypernyms:', topicSyn.hypernyms())
-# print('Hyponyms:', topicSyn.hyponyms())
-# print('Definition:', topicSyn.definition())
-# print('Lemma:', topicSyn.lemmas())
+def get_sibling_tag(siblings: list):
+    sibling = None
+    tagSiblings = [sib for sib in siblings if type(sib) is Tag]
+    if len(tagSiblings) > 0:
+        sibling = tagSiblings[0]
+    return sibling
+
+
+# Find relevant attributes for submissions
+def find_relevant_attrs(tag: Tag):
+    keywords = ['submit', 'submission']
+    for attribute in tag.attrs:
+        if any(word in attribute for word in keywords) or \
+                any(word in tag.attrs[attribute] for word in keywords):
+            relevantAttr = str(tag.attrs[attribute])
+            # if str(attribute) == 'href' and is_relative_url(relevantAttr):
+            #     relevantAttr = reconstruct_relative_url(relevantAttr)
+            print('Found relevant attribute:', relevantAttr)
+
+
+def has_matching_parent(tag: Tag, pattern):
+    curTag = tag.parent
+    isMatch = False
+    while not isMatch and curTag is not None:
+        print('Trying to match:', curTag.string)
+        if curTag.string is not None and pattern.match(curTag.string.lower()):
+            isMatch = True
+            print('Found matching pattern in parent tag')
+        curTag = curTag.parent
+    return isMatch
+
+
+def is_relative_url(url: str):
+    relativePattern = re.compile(r'^(?!www\.|(?:http|ftp)s?://|[A-Za-z]:\\|//).*')
+    isRelative = False
+    if relativePattern.match(url):
+        isRelative = True
+    return isRelative
+
+
+def label_email_feature(emailFeature):
+    if 'parent' not in emailFeature:
+        raise KeyError('Invalid emailFeature in label_email_features')
+
+    submissionKeywords = ['submit', 'submission', 'paper', 'abstract']
+    if any(word in emailFeature['parent'].get_text().lower() for word in submissionKeywords):
+        label = 'submission'
+    else:
+        label = 'unknown'
+
+    return label, emailFeature['url']
+
+
+def format_email(email: str):
+    if email.startswith('mailto:'):
+        email = email[email.find(':') + 1:]
+    return email
