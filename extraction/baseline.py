@@ -4,7 +4,6 @@ import json
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 from nltk.tag import StanfordNERTagger
-<<<<<<< HEAD
 from functools import reduce
 
 months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november',

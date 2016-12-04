@@ -1,16 +1,25 @@
+import datetime
+from concurrent.futures import ThreadPoolExecutor
+from multiprocessing.pool import ThreadPool
 import json
 from baseline import BaselineExtractor
 from extractor import EventExtractor
 
+# threadPool = ThreadPool(4)
+threadPool = ThreadPoolExecutor(max_workers=4)
 
 class CFPEvaluator:
     def __init__(self, jsonPath):
         with open(jsonPath) as jsonFile:
             self.websites = json.load(jsonFile)
 
-        for site in self.websites:
-            # site['baseline'] = BaselineExtractor(site['html'])
-            site['experimental'] = EventExtractor(site['html'], site['link'])
+
+        self.websites = [site for site in threadPool.map(self._createEventExtractor, self.websites[:25])]
+        print('Self.websites:', str(self.websites))
+
+    def _createEventExtractor(self, site):
+        site['experimental'] = EventExtractor(site['html'], site['link'])
+        return site
 
     def printResults(self):
         for page in self.websites:
@@ -27,7 +36,8 @@ class CFPEvaluator:
 
         results = {'location': 0, 'conferenceDate': 0}
         print('Site: ', self.websites[0].keys())
-        validWebsites = [site for site in self.websites if site[extractor].isValidDocument]
+        validWebsites = [site for site in self.websites
+                         if extractor in site and site[extractor].isValidDocument]
         validCount = len(validWebsites)
 
         for site in validWebsites:
@@ -53,7 +63,8 @@ def isPdf(site):
     html = site['html']
     return html.startswith('%PDF')
 
-
+start = datetime.datetime.now()
 evaluator = CFPEvaluator('../wikicfp/output.json')
 print('Results:', evaluator.evaluate())
 evaluator.printResults()
+print('Evaluated in {}'.format(datetime.datetime.now() - start))
