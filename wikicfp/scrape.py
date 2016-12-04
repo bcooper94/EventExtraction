@@ -1,9 +1,10 @@
 # Author: Joey Wilson
 
-import requests
+import sys
 import re
 import json
 import time
+import requests
 import bs4
 
 ROOT_URL = 'http://www.wikicfp.com/cfp/allcat'
@@ -38,7 +39,6 @@ def scrape_page(html):
   
    tables = soup.find_all('table')
 
-
    for r in tables[8].find_all('tr'):
       key = r.find('th').get_text().lower().strip()
       value = r.find('td').get_text().strip()
@@ -58,11 +58,18 @@ def scrape_page(html):
       data['categories'].append(r.get_text().strip())
 
    m = re.search('Link: <a href="([^"]+)"', html)
+   if m == None: # if there is no link, just throw it out
+      return 
+
    data['link'] = m.group(1)
-   r = requests.get(data['link'])
+   r = None
    data['html'] = None
-   print(data['link'], r.status_code)
-   if r.status_code == 200 and r.headers['content-type'] != 'application/pdf':
+   try:
+      r = requests.get(data['link'], timeout=5)
+   except:
+      print('Error getting {}: {}'.format(data['link'], sys.exc_info()))
+   if r and r.status_code == 200 and r.headers['content-type'] != 'application/pdf':
+      print(data['link'], r.status_code)
       data['html'] = r.text
 
    EXISTS[name] = 1
@@ -71,19 +78,20 @@ def scrape_page(html):
 def scrape_page_list(html):
    global PAGE_URL
    for l in re.findall('event\.showcfp\?eventid=([0-9]+)&amp;copyownerid=([0-9]+)', html):
-      r = requests.get(PAGE_URL.format(l[0], l[1]))
+      r = requests.get(PAGE_URL.format(l[0], l[1]), timeout=5)
       scrape_page(r.text)
 
 def scrape_category(category):
    global CATEGORY_URL
    print('Category: {}'.format(category))
-   for i in range(1, 2): # change to range(1,20) to get all of the pages
-      r = requests.get(CATEGORY_URL.format(category, i))
+   for i in range(1, 20): # change to range(1,20) to get all of the pages
+      print('PAGE: {}'.format(i))
+      r = requests.get(CATEGORY_URL.format(category, i), timeout=5)
       scrape_page_list(r.text)
 
 def scrape():
    global ROOT_URL
-   r = requests.get(ROOT_URL)
+   r = requests.get(ROOT_URL, timeout=5)
    soup = bs4.BeautifulSoup(r.text, 'html.parser')
    categories = map(lambda link: link.get_text(), soup.find_all('table')[3].find_all('a'))
    for i in range(0, 1): # chage to for c in categories to get all the categories
