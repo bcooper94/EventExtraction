@@ -11,30 +11,39 @@ months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'augus
 
 
 class ConferenceExtractorBase:
-    def __init__(self):
+    def __init__(self, html, url):
+        self.url = url
         self.people = None
         self.location = None
         self.dates = None
         self.conference = None
         self.topics = None
         self.email = None
+        self.submissionLink = None
         self.isValidDocument = False
+        if html is not None:
+            self.webpage = BeautifulSoup(html, 'html.parser')
+
+            if self.webpage.body is not None:
+                self.isValidDocument = True
+            else:
+                self.isValidDocument = False
 
     def __str__(self):
-        return 'ConferenceExtractorBase'
+        return '<ConferenceExtractor:\ntopics=[{}]\nlocation={}\ndates=[{}]' \
+               '\nconferences=[{}]\nemail={}\nsubmissionLink={}>'.format(
+            self.topics, self.location, self.dates, self.conference, self.email, self.submissionLink
+        )
 
 
 class BaselineExtractor(ConferenceExtractorBase):
-    def __init__(self, html):
-        ConferenceExtractorBase.__init__(self)
-        soup = BeautifulSoup(html, 'html.parser')
-        if soup.body is not None:
-            txt = soup.body.get_text()
-            self.isValidDocument = True
-        else:
-            self.isValidDocument = False
+    def __init__(self, html, url):
+        ConferenceExtractorBase.__init__(self, html, url)
+
+        if not self.isValidDocument:
             return
 
+        txt = self.webpage.body.get_text()
         tokenizedText = nltk.word_tokenize(txt)
         stanfordTagger = StanfordNERTagger('english.all.3class.distsim.crf.ser.gz')
         namedEntities = stanfordTagger.tag(tokenizedText)
@@ -60,7 +69,7 @@ class BaselineExtractor(ConferenceExtractorBase):
         conference = self._extract_first_entity(namedEntities, 'ORGANIZATION')
         if len(conference) > 0:
             self.conference = conference
-        self.topics = self._extract_topics(soup.body)
+        self.topics = self._extract_topics(self.webpage.body)
 
         self.dates = {}
         if len(dates) == 1:
@@ -70,12 +79,10 @@ class BaselineExtractor(ConferenceExtractorBase):
             for date, key in dates:
                 self.dates[key] = date
 
-    def __str__(self):
-        return '<BaselineExtractor conference={} location={}>'.format(self.conference, self.location)
-
     def _extract_first_entity(self, ner, entity):
         start = False
         entities = []
+        firstEntity = None
 
         for tag in ner:
             if start and tag[1] != entity:
@@ -84,7 +91,9 @@ class BaselineExtractor(ConferenceExtractorBase):
             start = tag[1] == entity
             if start:
                 entities.append(tag[0])
-        return reduce(lambda string, entity: '{} {}'.format(string, entity), entities)
+        if len(entities) > 0:
+            firstEntity = reduce(lambda string, entity: '{} {}'.format(string, entity), entities)
+        return firstEntity
 
     # Baseline topics extractor: only look for a list of topics after the keyword "topics"
     def _extract_topics(self, soup: BeautifulSoup):
@@ -170,7 +179,6 @@ class BaselineExtractor(ConferenceExtractorBase):
 
         return firstEmail
 
-
 # soup = BeautifulSoup(open('cfp/Trusted Smart Contracts 2017.html'), 'html.parser')
 # soup = BeautifulSoup(open('cfp/Corpus Historicus – The Body in_of History.html'), 'html.parser')
 # soup = BeautifulSoup(open('cfp/Call For Papers – ERA Track _ SANER 2017.html'), 'html.parser')
@@ -182,12 +190,12 @@ class BaselineExtractor(ConferenceExtractorBase):
 # doc = BaselineExtractor('resources/airccse.html')
 # doc = BaselineExtractor('resources/iMT 2016.html')
 
-print('BASELINE')
-with open('resources/iMT 2016.html') as file:
-    doc = BaselineExtractor(file.read())
-    print('Topics: ', doc.topics)
-    print('Conference location:', doc.location)
-    # print('PEOPLE:', doc.people)
-    print('Date:', doc.dates)
-    print('Conference name:', doc.conference)
-    print('Conference email:', doc.email)
+# print('BASELINE')
+# with open('resources/iMT 2016.html') as file:
+#     doc = BaselineExtractor(file.read())
+#     print('Topics: ', doc.topics)
+#     print('Conference location:', doc.location)
+#     # print('PEOPLE:', doc.people)
+#     print('Date:', doc.dates)
+#     print('Conference name:', doc.conference)
+#     print('Conference email:', doc.email)
