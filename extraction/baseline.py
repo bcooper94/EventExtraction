@@ -12,15 +12,15 @@ months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'augus
 
 class ConferenceExtractorBase:
     def __init__(self, html, url):
-        self.url = url
-        self.people = None
-        self.location = None
-        self.dates = None
-        self.conference = None
-        self.topics = None
-        self.email = None
-        self.submissionLink = None
-        self.importantLinks = []
+        self._url = url
+        self._people = None
+        self._location = None
+        self._dates = None
+        self._conference = None
+        self._topics = None
+        self._email = None
+        self._submissionLink = None
+        self._importantLinks = []
         self.isValidDocument = False
         if html is not None:
             self.webpage = BeautifulSoup(html, 'html.parser')
@@ -36,6 +36,78 @@ class ConferenceExtractorBase:
             self.topics, self.location, self.dates, self.conference, self.email,
             self.submissionLink, self.importantLinks
         )
+
+    @property
+    def url(self):
+        return self._url
+
+    @url.setter
+    def url(self, value):
+        self._url = value
+
+    @property
+    def people(self):
+        return self._people
+
+    @people.setter
+    def people(self, value):
+        self._people = value
+
+    @property
+    def location(self):
+        return self._location
+
+    @location.setter
+    def location(self, value):
+        self._location = value
+
+    @property
+    def dates(self):
+        return self._dates
+
+    @dates.setter
+    def dates(self, value):
+        self._dates = value
+
+    @property
+    def conference(self):
+        return self._conference
+
+    @conference.setter
+    def conference(self, value):
+        self._conference = value
+
+    @property
+    def topics(self):
+        return self._topics
+
+    @topics.setter
+    def topics(self, value):
+        self._topics = value
+
+    @property
+    def email(self):
+        return self._email
+
+    @email.setter
+    def email(self, value):
+        self._email = value
+
+    @property
+    def submissionLink(self):
+        return self._submissionLink
+
+    @submissionLink.setter
+    def submissionLink(self, value):
+        self._submissionLink = value
+
+    @property
+    def importantLinks(self):
+        return self._importantLinks
+
+    @importantLinks.setter
+    def importantLinks(self, value):
+        self._importantLinks = value
 
 
 class BaselineExtractor(ConferenceExtractorBase):
