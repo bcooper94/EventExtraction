@@ -171,18 +171,17 @@ class EventExtractor(ConferenceExtractorBase):
 
     # Baseline topics extractor: only look for a list of topics after the keyword "topics"
     def _extract_topics(self, soup: BeautifulSoup):
-        pattern = re.compile(r'(topics?)|(subjects?)')
+        pattern = re.compile(r'(topics?)|(subjects?)|(themes?)')
         for element in soup.recursiveChildGenerator():
             # Only start search for lists of topics if "topics" is present, as in white paper
             if element.string is not None and pattern.match(str(element.string).lower()) is not None:
                 return self._get_topic_list(element)
         return None
 
-    def _get_topic_list(self, soup: BeautifulSoup):
-        topics = []
-        list = soup.find_next_sibling('ol') or soup.find_next_sibling('ul')
-        if list is not None:
-            topics = [element.string for element in list.contents if type(element) is Tag]
+    def _get_topic_list(self, tag: Tag):
+        topics = find_topics_in_text(tag) or find_list(tag) or find_list_like_set(tag)
+        if topics is not None and len(topics) > 0:
+            topics = [topic for topic in topics if topic is not None]
         return topics
 
     def _label_entities(self, text, entities, entity_labels):
@@ -311,3 +310,61 @@ def format_email(email: str):
     if email.startswith('mailto:'):
         email = email[email.find(':') + 1:]
     return email
+
+
+# Looks for the first <ul>, <li>, or <table> tags in the sibling tags and their children
+# Return: list of topics or None if no topics found
+def find_list(soup: BeautifulSoup):
+    tags = [tag for tag in soup.nextSiblingGenerator() if type(tag) is Tag]
+    for tag in tags:
+        if tag.name == 'ul' or tag.name == 'ol':
+            return [element.string for element in tag.contents if type(element) is Tag]
+        elif tag.name == 'table':
+            return extract_table_topics(tag)
+        else:
+            for child in tag.recursiveChildGenerator():
+                if type(child) is Tag:
+                    if child.name == 'ul' or child.name == 'ol':
+                        return [element.string for element in child.contents if type(element) is Tag]
+                    elif child.name == 'table':
+                        return extract_table_topics(child)
+    return None
+
+
+def extract_table_topics(table: BeautifulSoup):
+    print('Extracting topics from a table')
+    lists = table.find_all('li')
+    if len(lists) > 0:
+        topics = [element.string for element in lists]
+        print('Found lists of topics:', topics)
+    else:
+        topics = [column.string for column in table.find_all('td')]
+    return topics
+
+
+# Attempt to find a list of topics inside the text of the target tag
+# TODO: Unless this is trivial, don't bother
+def find_topics_in_text(tag: Tag):
+    pattern = re.compile(r'(topics?)|(subjects?)')
+    if tag.string is not None:
+        pass
+    return None
+
+
+# Looks for a list-like construction with repeated tags, e.g. repeated <span>, <div>, etc.
+def find_list_like_set(soup: BeautifulSoup):
+    # print('Trying to find list-like set of tags...')
+    siblings = [tag for tag in soup.nextSiblingGenerator() if tag.name != 'br']
+    # print('List of siblings:', siblings)
+    tagFreqs = [nltk.FreqDist([child.name for child in sib.recursiveChildGenerator() if type(child) is Tag])
+                for sib in siblings if type(sib) is Tag]
+    # print('TagFreqs:', tagFreqs)
+    # for tag in siblings:
+    #     if tag.name not in prominentTags:
+    #         prominentTags[tag.name] = 0
+    #     else:
+    #         prominentTags[tag.name] += 1
+    # for tagType in prominentTags:
+    #     if mostProminentTag[1] < prominentTags[tagType]:
+    #         mostProminentTag = tagType, prominentTags[tagType]
+    # print('Most prominent tag following topics/subject:', mostProminentTag)
