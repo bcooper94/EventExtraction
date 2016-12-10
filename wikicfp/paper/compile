@@ -1,0 +1,15 @@
+#!/bin/bash
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m' # No Color
+
+#printf "Watching chapers for changes ...\n"
+#while inotifywait -e modify ./chapters; 
+#do
+#   printf "Changes detected, recompiling ...\n"
+latex -halt-on-error main.tex && 
+#bibtex main && 
+pdflatex -halt-on-error main.tex &&
+printf "${GREEN}SUCCESS${NC}\n" ||
+printf "${RED}FAIL${NC}\n"
+#done
