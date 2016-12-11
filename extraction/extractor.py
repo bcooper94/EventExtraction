@@ -216,34 +216,35 @@ class EventExtractor(ConferenceExtractorBase):
 
         return text[beg - range: end + range]
 
-    # use a bunch of awful regexes to recognize some shitty dates off these damn sites
+    # use regexes to match a set of candidate dates from the input text
+    # returns a list of tuples, one tuple per date match
+    # tuple contains: (text of date, start pos, end pos)
     def _extract_dates(self, text):
-        dates = re.findall(r'(\d+/\d+/\d+)', text)  # '12/30/1994 and anstr(other one) 5/23/16')
-        dates += re.findall(r'(\d+.*-\d+.*(([Jj]anuary)|([Ff]ebruary])|([Mm]arch)|([Aa]pril)|([Mm]ay)|([Jj]une)|'
-                            r'([Jj]uly)|([Aa]ugust)|([Ss]eptember)|([Oo]ctober)|([Nn]ovember)|([Dd]ecember))'
-                            r'\d*)', text)
-        dates += re.findall(r'(\d{2}[/.-]\d{2}[/.-]\d{4})', text)  # '2-24-6575 and a second one 23/34/6445')
+        dates = []
+        iters = []
+
+        iters += re.finditer(r'(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4})', text)  # '2-24-6575 and a second one 23/34/6445')
+
+        # add the match to our list of dates
+        for match in iters:
+            dates .append((match.group(), match.start(), match.end()))
+
         # dates += re.findall(r"(\w+)\s(\d?\d),?\s?'?(\d{4})", text) #'November 23, 2018')
-        dates += re.findall(r"\d{1,2}\s[A-Za-z]+,?\s?'?\d{4}",
-                            text)  # "23 November 3942 and 3 November '48 and 23 November, 3948")
-        dates += re.findall(r'(\d+\.\d+\.\d+)', text)  # 12.20.2001 format
+        potential_matches = []
+        potential_matches.append(re.finditer(r"((?:\d{1,2}\s?[‒-]?\s?)?\d{1,2}\s[A-Za-z]+,?\s?'?\d{2,4})", text))  # "23 November 3942 and 3 November '48 and 23 November, 3948")
         # dates += re.findall(r"(\w+)\s(\d{1,2})[trs][tdh]\s?,?\s?(\d{4})?", text)
-        # ew = re.findall(r"((?:[A-Za-z]+\s\d{1,2}(?:[trs][tdh])?(?:-\d{1,2}(?:[trs][tdh])?)?\s*[‒-]\s*)?([A-Za-z]+)\s\d{1,2}(?:[trs][tdh])?(?:\s*-\s*\d{1,2}(?:[trs][tdh])?)?,?(?:\s\d{4}?)?)", text)
-        ew = re.findall(r"((?:\d{2}\s)?(?:[A-Za-z]+\s\d{1,2}(?:[trs][tdh])?(?:-\d{1,2}"
-                        r"(?:[trs][tdh])?)?\s*[‒-]\s*)?([A-Za-z]+)\s(?:\d{4}|\d{1,2})"
-                        r"(?:[trs][tdh])?(?:\s*-\s*\d{1,2}(?:[trs][tdh])?)?,?"
-                        r"(?:\s\d{4}?)?)", text)
+        potential_matches.append(re.finditer(r"((?:\d{2}\s)?(?:[A-Za-z]+\s\d{1,2}(?:[trs][tdh])?(?:-\d{1,2}" +
+                        r"(?:[trs][tdh])?)?\s*[‒-]\s*)?([A-Za-z]+)\s(?:\d{4}|\d{1,2})" +
+                        r"(?:[trs][tdh])?(?:\s*-\s*\d{1,2}(?:[trs][tdh])?)?,?" +
+                        r"(?:\s\d{4}?)?)", text)) # "September 18-20, 2017", "April 15, 2017",
 
-        # regex isn't perfect, so it only keeps dates with words that are months
-        for gross in ew:
-            if gross[1].lower() in months:
-                bool = False
-                for date in dates:
-                    bool = bool or gross[0] in date
-                if not bool:
-                    dates.append(gross[0])
+        # add the match to our list of dates if the match contains a month or month abbreviation
+        for iterator in potential_matches:
+            for match in iterator:
+                if any(month.lower() in match.group().lower() for month in months):
+                    dates.append((match.group(), match.start(), match.end()))
 
-        return set(dates)
+        return dates
 
     def _extract_first_email(self, text):
         firstEmail = None
@@ -311,3 +312,53 @@ def format_email(email: str):
     if email.startswith('mailto:'):
         email = email[email.find(':') + 1:]
     return email
+
+
+text = '''
+IEEE 11th International Symposium on Embedded Multicore/Many-core Systems-on-Chip (MCSoC-2017)
+Korea University, Seoul, Korea, September 18-20, 2017
+Main menu
+Skip to primary content
+Skip to secondary content
+MCSoC-2017
+Committee
+Submission
+Registration
+Program
+Venue/Accommodation/Visa
+Program Commitee
+Contact
+MCSoC-2017
+The 11th IEEE MCSoC-2017 (11th IEEE International Symposium on Embedded Multicore/Many-core Systems-on-Chip) aims at providing the  world’s premier forum of leading  researchers in the embedded Multicore/Many-core SoCs software, tools and  applications design areas for Academia and industries. Prospective authors are invited to submit paper of their works. Submission of a paper implies that at least one of the authors will have a full registration to the symposium upon  acceptance of the paper.
+
+
+
+Program Tracks
+
+Programming: Compilers, automatic code generation methods, cross assemblers, programming models, memory management, runtime management, object-oriented aspects, concurrent software.
+Architectures: Multicore, Many-core, re-configurable platforms, memory management support, communication, protocols, real-time systems, SoCs and DSPs, heterogeneous architectures with HW accelerators and GPUs.
+Design: Hardware specification, modeling, synthesis, low power simulation and analysis, reliability, variability compensation, thermal aware design, performance modeling, security issues.
+Interconnection Networks: Electronic/Photonic/RF NoC architectures, Power and energy issues in NoCs, Application specific NoC design, Timing, Synchronous /asynchronous communication, RTOS support for NoCs, Modeling, simulation, NoC support for MCSoC, NoC for FPGAs and structured ASICs, NoC design tools, Photonic components, Virtual fabrications, Photonic circuits, Routing, Filter design.
+Testing: Design-for-test, Test synthesis, Built-in-self-test, Embedded test for MCSoC.
+Packaging Technologies: 3D VLSI packaging Technology, Vertical Interconnections in 3D Electronics, Periphery Interconnection between Stacked ICs, Area Interconnection between Stacked ICs, Thermal management schemes.
+Real-Time Systems: real-time system design, RTOS, Compilation techniques, Memory/cache optimization, Interfacing and software issues, Distributed real-time systems, real-time kernels, Task scheduling, Multitasking design.
+Benchmarks: Parallel Benchmarks, Workload characterization and evaluation
+Applications: Bio-medical, Health-care, Computational biology, Internet of Things, Smart Mobility, Electric Vehicles, Aviation, Automobile, Military, and Consumer electronics.
+Special Sessions
+
+Special Session on Auto-Tuning for Multicore and GPU
+more to be listed here.
+Important Dates
+
+Paper submission: April 15, 2017
+Acceptance notification: June 23, 2017
+Camera ready paper: July 14, 2017
+Proceedings Publication and Indexing
+MCSoC-2017 proceedings will be published by IEEE Computer Society, which will be included in the Computer Society Digital Library CSDL and IEEE Xplore. All CPS conference publications are also submitted for indexing to EI’s Engineering  Information Index, Compendex, and ISI Thomson’s Scientific and Technical Proceedings, ISTP/ISI Proceedings, and ISI Thomson.
+Special Issue
+Authors of selected papers from IEEE MCSoC-2017 Symposium will be invited to submit extended versions of their papers to  the following journal/transaction for inclusion in special issue (TBC).
+'''
+
+
+extractor = EventExtractor(text, 'www.google.com')
+print(extractor._extract_dates(text))
