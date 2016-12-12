@@ -1,4 +1,5 @@
 import nltk
+import spacy
 import re
 from bs4 import BeautifulSoup
 from bs4.element import Tag
@@ -11,6 +12,8 @@ from baseline import ConferenceExtractorBase
 months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november',
           'december', 'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec']
 
+nlp = spacy.load('en')
+
 '''
 Fields:
     people
@@ -19,19 +22,24 @@ Fields:
     conference
     topics
 '''
-
-
 class EventExtractor(ConferenceExtractorBase):
-    def __init__(self, html, url):
-        ConferenceExtractorBase.__init__(self, html, url)
+    def __init__(self, labeled_site, url):
+        ConferenceExtractorBase.__init__(self, labeled_site, url)
         if not self.isValidDocument:
             return
 
         txt = self.webpage.body.get_text()
         tokenizedText = nltk.word_tokenize(txt)
-        stanfordTagger = StanfordNERTagger('english.all.3class.distsim.crf.ser.gz')
+        stanfordTagger = StanfordNERTagger(model_filename='english.muc.7class.distsim.crf.ser.gz')
         namedEntities = stanfordTagger.tag(tokenizedText)
+        # dateEntities = collapse_entities(namedEntities, 'DATE')
+        # dateEntities = split_dates(dateEntities)
+        # print('Dates for {}:\n'.format(labeled_site['link']), dateEntities)
         namedEntities = [entity for entity in namedEntities if entity[1] != 'O']
+        # dateEntities = self._extract_first_entity(namedEntities, 'DATE')
+        spacy_doc = nlp(txt)
+        date_features = extract_date_features(spacy_doc)
+        # date_locations = self._extract_dates(txt)
 
         # Found on http://emailregex.com/
         self.email = self._extract_first_email(txt)
@@ -368,3 +376,64 @@ def find_list_like_set(soup: BeautifulSoup):
     #     if mostProminentTag[1] < prominentTags[tagType]:
     #         mostProminentTag = tagType, prominentTags[tagType]
     # print('Most prominent tag following topics/subject:', mostProminentTag)
+
+
+def collapse_entities(named_entities: list, entity_type: str):
+    entity_type = entity_type.upper()
+    start = False
+    entities = []
+    curEntity = ''
+
+    for entity in named_entities:
+        if start and entity[1] != entity_type:
+            if entity_type == 'DATE' and entity_is_years_list(curEntity):
+                entities.extend(curEntity.split(' '))
+            else:
+                entities.append(re.sub(r'\s+,', ',', re.sub(r'\s+', ' ', curEntity.strip())))
+            # entities.append(curEntity)
+            curEntity = ''
+
+        start = entity[1] == entity_type
+        if start:
+            curEntity += entity[0] + ' '
+            # curEntity += entity[0]
+
+    if curEntity != '':
+        print('Appending last entity:', curEntity)
+        entities.append(re.sub(r'\s+,', ',', re.sub(r'\s+', ' ', curEntity.strip())))
+    return entities
+
+
+def entity_is_years_list(entity: str):
+    is_years = False
+    year_pattern = re.compile(r'\d\d\d\d\s+(\d\d\d\d\s+)+')
+    if year_pattern.match(entity):
+        is_years = True
+        print('Entity matches year pattern:', entity)
+    return is_years
+
+
+def extract_date_features(spacy_doc, context_width=5):
+    features = []
+    date_entities = [entity for entity in spacy_doc.ents if entity.label_ == 'DATE']
+
+    for entity in date_entities:
+        start = max(0, entity.start - 1)
+        left_context = [word for word in spacy_doc[start - context_width:start]]
+        right_context = [word for word in spacy_doc[entity.end:entity.end + context_width]]
+        feature = {}
+        for word in left_context:
+            feature['left_' + str(word)] = True
+        for word in right_context:
+            feature['right_' + str(word)] = True
+        features.append((feature, entity.text))
+
+    return features
+
+
+def train_date_classifier(feature_label_tuples: list):
+    return nltk.NaiveBayesClassifier.train(feature_label_tuples)
+
+
+def classify_date(features: dict, model: nltk.NaiveBayesClassifier):
+    return model.classify(features)
