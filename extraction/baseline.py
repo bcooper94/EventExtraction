@@ -11,7 +11,7 @@ months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'augus
 
 
 class ConferenceExtractorBase:
-    def __init__(self, labeled_site, url):
+    def __init__(self, html, url, labeled_site=None):
         self._labeled_site = labeled_site
         self._url = url
         self._people = None
@@ -23,8 +23,8 @@ class ConferenceExtractorBase:
         self._submissionLink = None
         self._importantLinks = []
         self.isValidDocument = False
-        if labeled_site is not None and 'html' in labeled_site and labeled_site['html'] is not None:
-            self.webpage = BeautifulSoup(labeled_site['html'], 'html.parser')
+        if html is not None:
+            self.webpage = BeautifulSoup(html, 'html.parser')
 
             if self.webpage.body is not None:
                 self.isValidDocument = True
@@ -112,8 +112,8 @@ class ConferenceExtractorBase:
 
 
 class BaselineExtractor(ConferenceExtractorBase):
-    def __init__(self, labeled_site, url):
-        ConferenceExtractorBase.__init__(self, labeled_site, url)
+    def __init__(self, html, url, labeled_site=None):
+        ConferenceExtractorBase.__init__(self, html, url, labeled_site)
 
         if not self.isValidDocument:
             return

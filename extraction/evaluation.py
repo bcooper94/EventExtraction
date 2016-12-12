@@ -12,10 +12,10 @@ class CFPEvaluator:
             self.websites = json.load(jsonFile)
 
         self.websites = [site for site in threadPool.map(self._createEventExtractor, self.websites[:50])]
-        # self.websites = [EventExtractor(site, site['link']) for site in self.websites[:50]]
+        # self.websites = [EventExtractor(site['html'], site['link'], site) for site in self.websites[:50]]
 
     def _createEventExtractor(self, site):
-        site['experimental'] = EventExtractor(site, site['link'])
+        site['experimental'] = EventExtractor(site['html'], site['link'], site)
         # site['baseline'] = BaselineExtractor(site, site['link'])
         return site
 
@@ -76,6 +76,6 @@ def isPdf(site):
 start = datetime.datetime.now()
 evaluator = CFPEvaluator('../wikicfp/output.json')
 # print('Results:', evaluator.evaluate())
-# evaluator.printResults()
+evaluator.printResults()
 print('Evaluated in {}'.format(datetime.datetime.now() - start))
 # evaluator.evaluateTopicMatch()
