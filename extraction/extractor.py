@@ -1,6 +1,9 @@
 import nltk
 import spacy
 import re
+import json
+import random
+from concurrent.futures import ThreadPoolExecutor
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 from nltk.tag import StanfordNERTagger
@@ -8,6 +11,9 @@ from nltk.corpus import wordnet as wn
 from functools import reduce
 from urllib.parse import urljoin
 from baseline import ConferenceExtractorBase
+from normalize import normalizeDate
+
+threadPool = ThreadPoolExecutor(max_workers=4)
 
 months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november',
           'december', 'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec']
@@ -26,66 +32,80 @@ Fields:
 
 class EventExtractor(ConferenceExtractorBase):
     def __init__(self, html, url, labeled_site=None):
-        print('Extracting site')
-        ConferenceExtractorBase.__init__(self, html, url, labeled_site)
+        # Get rid of weird unicode symbols
+        filtered_html = ''
+        if html is not None:
+            for char in html:
+                try:
+                    char.encode('ascii')
+                    filtered_html += char
+                except Exception:
+                    pass
+        else:
+            filtered_html = None
+
+        ConferenceExtractorBase.__init__(self, filtered_html, url, labeled_site)
+
         if not self.isValidDocument:
             return
 
         txt = self.webpage.body.get_text()
-        tokenizedText = nltk.word_tokenize(txt)
-        stanfordTagger = StanfordNERTagger(model_filename='english.all.3class.distsim.crf.ser.gz')
-        namedEntities = stanfordTagger.tag(tokenizedText)
-        # dateEntities = collapse_entities(namedEntities, 'DATE')
-        # dateEntities = split_dates(dateEntities)
-        # print('Dates for {}:\n'.format(labeled_site['link']), dateEntities)
-        namedEntities = [entity for entity in namedEntities if entity[1] != 'O']
+        # tokenizedText = nltk.word_tokenize(txt)
+        # stanfordTagger = StanfordNERTagger(model_filename='english.all.3class.distsim.crf.ser.gz')
+        # namedEntities = stanfordTagger.tag(tokenizedText)
+        # # dateEntities = collapse_entities(namedEntities, 'DATE')
+        # # dateEntities = split_dates(dateEntities)
+        # # print('Dates for {}:\n'.format(labeled_site['link']), dateEntities)
+        # namedEntities = [entity for entity in namedEntities if entity[1] != 'O']
         # dateEntities = self._extract_first_entity(namedEntities, 'DATE')
         spacy_doc = nlp(txt)
         date_features = extract_date_features(spacy_doc)
-        # date_locations = self._extract_dates(txt)
+        labeled_features = label_date_features(date_features, labeled_site)
 
-        # Found on http://emailregex.com/
-        self.email = self._extract_first_email(txt)
-
-        # TODO: Extract organization from the page's copyright notice in our actual event extractor?
-        # organizations = [tag for tag in namedEntities if tag[1] == 'ORGANIZATION']
-        self.people = [tag for tag in namedEntities if tag[1] == 'PERSON']
-
-        # Location: take the first entity tagged with LOCATION
-        self.location = self._extract_first_entity(namedEntities, 'LOCATION')
-
-        # conference = ['conference', 'association']
-
-        abstractDate = ['abstract', 'summary', 'proposal']
-        paperDate = ['paper', 'final']
-        conferenceDate = ['conference', 'event', 'time', 'held', 'hosted']
-        host = ['host']
-
-        conference = self._extract_first_entity(namedEntities, 'ORGANIZATION')
-        if conference is not None and len(conference) > 0:
-            self.conference = conference
-        self.topics = self._extract_topics(self.webpage.body)
-
-        self.dates = {}
-        dates = self._extract_dates(txt)
-        if len(dates) == 1:
-            self.dates = {'conference': list(dates)[0]}
-        else:
-            dates = self._label_entities(txt, self._extract_dates(txt), [abstractDate, paperDate, conferenceDate])
-            for date, key in dates:
-                self.dates[key] = date
-                # for date in dates:
-                #     print(get_context(txt, date, 20))
-        labeledLinks = self._get_labeled_links()
-        self.email = []
-        for link in labeledLinks:
-            linkLabel = link['label']
-            if self.submissionLink is None and linkLabel == 'submissionDate':
-                self.submissionLink = link['url']
-            elif linkLabel == 'faq':
-                self.importantLinks.append(link['url'])
-            elif linkLabel == 'email':
-                self.email.append(label_email_feature(link))
+        # # date_locations = self._extract_dates(txt)
+        #
+        # # Found on http://emailregex.com/
+        # self.email = self._extract_first_email(txt)
+        #
+        # # TODO: Extract organization from the page's copyright notice in our actual event extractor?
+        # # organizations = [tag for tag in namedEntities if tag[1] == 'ORGANIZATION']
+        # self.people = [tag for tag in namedEntities if tag[1] == 'PERSON']
+        #
+        # # Location: take the first entity tagged with LOCATION
+        # self.location = self._extract_first_entity(namedEntities, 'LOCATION')
+        #
+        # # conference = ['conference', 'association']
+        #
+        # abstractDate = ['abstract', 'summary', 'proposal']
+        # paperDate = ['paper', 'final']
+        # conferenceDate = ['conference', 'event', 'time', 'held', 'hosted']
+        # host = ['host']
+        #
+        # conference = self._extract_first_entity(namedEntities, 'ORGANIZATION')
+        # if conference is not None and len(conference) > 0:
+        #     self.conference = conference
+        # self.topics = self._extract_topics(self.webpage.body)
+        #
+        # self.dates = {}
+        # dates = self._extract_dates(txt)
+        # if len(dates) == 1:
+        #     self.dates = {'conference': list(dates)[0]}
+        # else:
+        #     dates = self._label_entities(txt, self._extract_dates(txt), [abstractDate, paperDate, conferenceDate])
+        #     for date, key in dates:
+        #         self.dates[key] = date
+        #         # for date in dates:
+        #         #     print(get_context(txt, date, 20))
+        # labeledLinks = self._get_labeled_links()
+        # self.email = []
+        # for link in labeledLinks:
+        #     linkLabel = link['label']
+        #     if self.submissionLink is None and linkLabel == 'submissionDate':
+        #         self.submissionLink = link['url']
+        #     elif linkLabel == 'faq':
+        #         self.importantLinks.append(link['url'])
+        #     elif linkLabel == 'email':
+        #         self.email.append(label_email_feature(link))
 
     def _extract_first_entity(self, ner, entity):
         start = False
@@ -431,18 +451,111 @@ def extract_date_features(spacy_doc, context_width=5):
             feature['left_' + str(word)] = True
         for word in right_context:
             feature['right_' + str(word)] = True
-        features.append((feature, entity.text))
+
+        normalized_date = normalizeDate(entity.text)
+
+        if normalized_date is not None:
+            features.append((feature, normalized_date, entity.text))
 
     return features
 
 
+def label_date_features(date_features: list, labeled_site: dict):
+    if labeled_site is None:
+        return None
+
+    labeled_features = []
+    found_start = False
+    found_stop = False
+
+    if labeled_site is not None and 'start' in labeled_site and 'stop' in labeled_site:
+        start_date = normalizeDate(labeled_site['start'])
+        stop_date = normalizeDate(labeled_site['stop'])
+        for feature, normalized_date, date_text in date_features:
+            if type(normalized_date) is tuple:
+                normalized_start, normalized_stop = normalized_date
+
+                if normalized_start == start_date:
+                    # print('Found start date:', normalized_start)
+                    labeled = (feature, 'start')
+                    found_start = True
+                elif normalized_stop == stop_date:
+                    # print('Found end date:', normalized_stop)
+                    labeled = (feature, 'stop')
+                    found_stop = True
+                else:
+                    labeled = (feature, 'none')
+            else:
+                # print('Start={}, stop={}, normalized={}'.format(start_date, stop_date, normalized_date))
+                if normalized_date == start_date:
+                    # print('Found start date:', date_text)
+                    labeled = (feature, 'start')
+                    found_start = True
+                elif normalized_date == stop_date:
+                    # print('Found stop date:', date_text)
+                    labeled = (feature, 'stop')
+                    found_stop = True
+                else:
+                    labeled = (feature, 'none')
+            labeled_features.append(labeled)
+
+        # if not found_start and not found_stop:
+        #     print("No start or stop found in", labeled_site['link'])
+        # else:
+        #     if not found_start:
+        #         print("No start found in", labeled_site['html'])
+        #     if not found_stop:
+        #         print("No stop found in", labeled_site['html'])
+        return labeled_features
+
+
+def parsed_site(site):
+    if 'html' in site and site['html'] is not None:
+        soup = BeautifulSoup(site['html'], 'html.parser')
+        if soup.body is not None:
+            site['parsed_html'] = nlp(soup.get_text())
+            return site
+    return None
+
+
+def get_labeled_html(jsonPath: str):
+    websites = None
+
+    with open(jsonPath) as jsonFile:
+        websites = json.load(jsonFile)
+    if websites is not None:
+        websites = [site for site in threadPool.map(parsed_site, websites[:50]) if site is not None]
+        # valid_sites = []
+        # for site in websites:
+        #     parsed = parsed_site(site)
+        #     if parsed is not None:
+        #         valid_sites.append(parsed)
+        # websites = valid_sites
+    return [site for site in websites[:50]]
+
+
 def train_date_classifier(feature_label_tuples: list):
-    return nltk.NaiveBayesClassifier.train(feature_label_tuples)
+    return nltk.MaxentClassifier.train(feature_label_tuples)
 
 
 def classify_date(features: dict, model: nltk.NaiveBayesClassifier):
     return model.classify(features)
 
+
+print('Loading training data...')
+training_data = get_labeled_html('../wikicfp/dev.json')
+print('Extracting date features...')
+training_date_features = [(extract_date_features(site['parsed_html']), site) for site in training_data]
+print('Labeling date features...')
+labeled_features = [feature_label for feature_list in [label_date_features(date_features, labeled_site)
+                                                       for (date_features, labeled_site) in training_date_features]
+                    for feature_label in feature_list if feature_list is not None]
+print('Finished labeling date features...')
+# print('Date features:\n', labeled_features)
+
+random.shuffle(labeled_features)
+date_model = train_date_classifier(labeled_features[:40])
+print('Date model accuracy:', nltk.classify.accuracy(date_model, labeled_features[40:]))
 
 # text = '''
 # IEEE 11th International Symposium on Embedded Multicore/Many-core Systems-on-Chip (MCSoC-2017)
