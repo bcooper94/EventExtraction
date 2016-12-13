@@ -1,12 +1,15 @@
-# Author: Joey Wilson
+
 
 import json
 import random
 import nltk
 import bs4
+import sys
 
 from googleapiclient import discovery
 from oauth2client.client import GoogleCredentials
+
+service = discovery.build('language', 'v1', credentials=GoogleCredentials.get_application_default())
 
 #debug
 def json_print(obj):
@@ -33,8 +36,9 @@ def is_closer(index, a, b):
    return b
 
 def get_locations_from_google(text):
-   credentials = GoogleCredentials.get_application_default()
-   service = discovery.build('language', 'v1', credentials=credentials)
+   global service
+
+   locations = []
    
    service_request = service.documents().analyzeEntities(
       body={
@@ -45,9 +49,12 @@ def get_locations_from_google(text):
          'encodingType': 'UTF32'
       }
    )
-   response = service_request.execute()
-   
-   locations = []
+   try:
+      response = service_request.execute()
+   except:
+      print('Exception', sys.exc_info())
+      return locations   
+
    for e in response['entities']:
       if e['type'] == 'LOCATION':
          locations.append(e)
@@ -72,9 +79,12 @@ def get_cities(name, mentions, locations):
 
 def get_locations(page, states, countries):
 
-   text = bs4.BeautifulSoup(page, 'html.parser').get_text()
- 
    locations = []
+
+   if page == None:
+      return locations
+   
+   text = bs4.BeautifulSoup(page, 'html.parser').get_text()
 
    possible_locations = get_locations_from_google(text)
 
@@ -154,8 +164,48 @@ def run(training_data, test_data, states, countries):
    training_features = build_feature_list(training_data, states, countries)
    test_features = build_feature_list(test_data, states, countries)
    
-   classifier = nltk.NaiveBayesClassifier.train(training_features)
-   print('Location: ', nltk.classify.accuracy(classifier, test_features))
+   nb = nltk.NaiveBayesClassifier.train(training_features)
+   me = nltk.MaxentClassifier.train(training_features)
+   dt = nltk.DecisionTreeClassifier.train(training_features)
+
+   print(len(training_features))
+   print(len(test_features))
+
+   for classifier in [nb, me, dt]:
+
+      tp = 0
+      fp = 0
+      tn = 0
+      fn = 0
+      for t in test_features:
+         guess = classifier.classify(t[0])
+         if t[1] == True:
+            if guess == True:
+               tp += 1
+            else:
+               fn += 1
+         elif t[1] == False:
+            if guess == False:
+               tn += 1
+            else:
+               fp += 1
+         else:
+            raise 'Broken'
+
+      accuracy = (tp+tn)/len(test_features) 
+      precision = float(tp)/(tp+fp)
+      recall = float(tp)/(tp+fn)
+      f1 = 2 * ((precision*recall)/(precision+recall))
+
+      print('''
+         Location Results
+         Accuracy: {}
+         Precision: {}
+         Recall: {}
+         f1: {}
+         \n
+      '''.format(accuracy, precision, recall, f1))
+
 
 def main():
    f = open('./output.json')
@@ -170,7 +220,7 @@ def main():
    countries = json.loads(f.read())
    f.close()
 
-   data = cfps[0:60] 
+   data = cfps#cfps[0:120] 
 
    random.shuffle(data)   
    
