@@ -1,11 +1,9 @@
 import datetime
 from concurrent.futures import ThreadPoolExecutor
-from multiprocessing.pool import ThreadPool
 import json
 from baseline import BaselineExtractor
 from extractor import EventExtractor
 
-# threadPool = ThreadPool(4)
 threadPool = ThreadPoolExecutor(max_workers=4)
 
 class CFPEvaluator:
@@ -13,13 +11,25 @@ class CFPEvaluator:
         with open(jsonPath) as jsonFile:
             self.websites = json.load(jsonFile)
 
-
-        self.websites = [site for site in threadPool.map(self._createEventExtractor, self.websites[:25])]
-        print('Self.websites:', str(self.websites))
+        # self.websites = [site for site in threadPool.map(self._createEventExtractor, self.websites[:50])]
+        self.websites = [EventExtractor(site['html'], site['link'], site) for site in self.websites[:50]]
 
     def _createEventExtractor(self, site):
-        site['experimental'] = EventExtractor(site['html'], site['link'])
+        site['experimental'] = EventExtractor(site['html'], site['link'], site)
+        # site['baseline'] = BaselineExtractor(site, site['link'])
         return site
+
+    def evaluateTopicMatch(self):
+        totalTopics = len(self.websites)
+        extractionsWithTopics = [site for site in self.websites
+                                 if site['experimental'] is not None
+                                 and site['experimental'].topics is not None
+                                 and len(site['experimental'].topics) > 0]
+        for site in extractionsWithTopics:
+            print('Found topics:', site['experimental'].topics)
+        print('Out of {} sites, extracted topics for {} sites'.format(totalTopics,
+                                                                      len(extractionsWithTopics)))
+
 
     def printResults(self):
         for page in self.websites:
@@ -65,6 +75,7 @@ def isPdf(site):
 
 start = datetime.datetime.now()
 evaluator = CFPEvaluator('../wikicfp/output.json')
-print('Results:', evaluator.evaluate())
-evaluator.printResults()
+# print('Results:', evaluator.evaluate())
+# evaluator.printResults()
 print('Evaluated in {}'.format(datetime.datetime.now() - start))
+# evaluator.evaluateTopicMatch()

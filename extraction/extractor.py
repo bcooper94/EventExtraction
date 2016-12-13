@@ -1,5 +1,9 @@
 import nltk
+import spacy
 import re
+import json
+import random
+from concurrent.futures import ThreadPoolExecutor
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 from nltk.tag import StanfordNERTagger
@@ -7,9 +11,14 @@ from nltk.corpus import wordnet as wn
 from functools import reduce
 from urllib.parse import urljoin
 from baseline import ConferenceExtractorBase
+from normalize import normalizeDate
+
+threadPool = ThreadPoolExecutor(max_workers=4)
 
 months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november',
           'december', 'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec']
+
+nlp = spacy.load('en')
 
 '''
 Fields:
@@ -22,59 +31,81 @@ Fields:
 
 
 class EventExtractor(ConferenceExtractorBase):
-    def __init__(self, html, url):
-        ConferenceExtractorBase.__init__(self, html, url)
+    def __init__(self, html, url, labeled_site=None):
+        # Get rid of weird unicode symbols
+        filtered_html = ''
+        if html is not None:
+            for char in html:
+                try:
+                    char.encode('ascii')
+                    filtered_html += char
+                except Exception:
+                    pass
+        else:
+            filtered_html = None
+
+        ConferenceExtractorBase.__init__(self, filtered_html, url, labeled_site)
+
         if not self.isValidDocument:
             return
 
         txt = self.webpage.body.get_text()
-        tokenizedText = nltk.word_tokenize(txt)
-        stanfordTagger = StanfordNERTagger('english.all.3class.distsim.crf.ser.gz')
-        namedEntities = stanfordTagger.tag(tokenizedText)
-        namedEntities = [entity for entity in namedEntities if entity[1] != 'O']
+        # tokenizedText = nltk.word_tokenize(txt)
+        # stanfordTagger = StanfordNERTagger(model_filename='english.all.3class.distsim.crf.ser.gz')
+        # namedEntities = stanfordTagger.tag(tokenizedText)
+        # # dateEntities = collapse_entities(namedEntities, 'DATE')
+        # # dateEntities = split_dates(dateEntities)
+        # # print('Dates for {}:\n'.format(labeled_site['link']), dateEntities)
+        # namedEntities = [entity for entity in namedEntities if entity[1] != 'O']
+        # dateEntities = self._extract_first_entity(namedEntities, 'DATE')
+        spacy_doc = nlp(txt)
+        date_features = extract_date_features(spacy_doc)
+        labeled_features = label_date_features(date_features, labeled_site)
 
-        # Found on http://emailregex.com/
-        self.email = self._extract_first_email(txt)
-
-        # TODO: Extract organization from the page's copyright notice in our actual event extractor?
-        # organizations = [tag for tag in namedEntities if tag[1] == 'ORGANIZATION']
-        self.people = [tag for tag in namedEntities if tag[1] == 'PERSON']
-
-        # Location: take the first entity tagged with LOCATION
-        self.location = self._extract_first_entity(namedEntities, 'LOCATION')
-
-        # conference = ['conference', 'association']
-
-        abstractDate = ['abstract', 'summary', 'proposal']
-        paperDate = ['paper', 'final']
-        conferenceDate = ['conference', 'event', 'time', 'held', 'hosted']
-        host = ['host']
-
-        conference = self._extract_first_entity(namedEntities, 'ORGANIZATION')
-        if conference is not None and len(conference) > 0:
-            self.conference = conference
-        self.topics = self._extract_topics(self.webpage.body)
-
-        self.dates = {}
-        dates = self._extract_dates(txt)
-        if len(dates) == 1:
-            self.dates = {'conference': list(dates)[0]}
-        else:
-            dates = self._label_entities(txt, self._extract_dates(txt), [abstractDate, paperDate, conferenceDate])
-            for date, key in dates:
-                self.dates[key] = date
-                # for date in dates:
-                #     print(get_context(txt, date, 20))
-        labeledLinks = self._get_labeled_links()
-        self.email = []
-        for link in labeledLinks:
-            linkLabel = link['label']
-            if self.submissionLink is None and linkLabel == 'submissionDate':
-                self.submissionLink = link['url']
-            elif linkLabel == 'faq':
-                self.importantLinks.append(link['url'])
-            elif linkLabel == 'email':
-                self.email.append(label_email_feature(link))
+        # # date_locations = self._extract_dates(txt)
+        #
+        # # Found on http://emailregex.com/
+        # self.email = self._extract_first_email(txt)
+        #
+        # # TODO: Extract organization from the page's copyright notice in our actual event extractor?
+        # # organizations = [tag for tag in namedEntities if tag[1] == 'ORGANIZATION']
+        # self.people = [tag for tag in namedEntities if tag[1] == 'PERSON']
+        #
+        # # Location: take the first entity tagged with LOCATION
+        # self.location = self._extract_first_entity(namedEntities, 'LOCATION')
+        #
+        # # conference = ['conference', 'association']
+        #
+        # abstractDate = ['abstract', 'summary', 'proposal']
+        # paperDate = ['paper', 'final']
+        # conferenceDate = ['conference', 'event', 'time', 'held', 'hosted']
+        # host = ['host']
+        #
+        # conference = self._extract_first_entity(namedEntities, 'ORGANIZATION')
+        # if conference is not None and len(conference) > 0:
+        #     self.conference = conference
+        # self.topics = self._extract_topics(self.webpage.body)
+        #
+        # self.dates = {}
+        # dates = self._extract_dates(txt)
+        # if len(dates) == 1:
+        #     self.dates = {'conference': list(dates)[0]}
+        # else:
+        #     dates = self._label_entities(txt, self._extract_dates(txt), [abstractDate, paperDate, conferenceDate])
+        #     for date, key in dates:
+        #         self.dates[key] = date
+        #         # for date in dates:
+        #         #     print(get_context(txt, date, 20))
+        # labeledLinks = self._get_labeled_links()
+        # self.email = []
+        # for link in labeledLinks:
+        #     linkLabel = link['label']
+        #     if self.submissionLink is None and linkLabel == 'submissionDate':
+        #         self.submissionLink = link['url']
+        #     elif linkLabel == 'faq':
+        #         self.importantLinks.append(link['url'])
+        #     elif linkLabel == 'email':
+        #         self.email.append(label_email_feature(link))
 
     def _extract_first_entity(self, ner, entity):
         start = False
@@ -314,51 +345,263 @@ def format_email(email: str):
     return email
 
 
-text = '''
-IEEE 11th International Symposium on Embedded Multicore/Many-core Systems-on-Chip (MCSoC-2017)
-Korea University, Seoul, Korea, September 18-20, 2017
-Main menu
-Skip to primary content
-Skip to secondary content
-MCSoC-2017
-Committee
-Submission
-Registration
-Program
-Venue/Accommodation/Visa
-Program Commitee
-Contact
-MCSoC-2017
-The 11th IEEE MCSoC-2017 (11th IEEE International Symposium on Embedded Multicore/Many-core Systems-on-Chip) aims at providing the  world’s premier forum of leading  researchers in the embedded Multicore/Many-core SoCs software, tools and  applications design areas for Academia and industries. Prospective authors are invited to submit paper of their works. Submission of a paper implies that at least one of the authors will have a full registration to the symposium upon  acceptance of the paper.
+# Looks for the first <ul>, <li>, or <table> tags in the sibling tags and their children
+# Return: list of topics or None if no topics found
+def find_list(soup: BeautifulSoup):
+    tags = [tag for tag in soup.nextSiblingGenerator() if type(tag) is Tag]
+    for tag in tags:
+        if tag.name == 'ul' or tag.name == 'ol':
+            return [element.string for element in tag.contents if type(element) is Tag]
+        elif tag.name == 'table':
+            return extract_table_topics(tag)
+        else:
+            for child in tag.recursiveChildGenerator():
+                if type(child) is Tag:
+                    if child.name == 'ul' or child.name == 'ol':
+                        return [element.string for element in child.contents if type(element) is Tag]
+                    elif child.name == 'table':
+                        return extract_table_topics(child)
+    return None
 
 
-
-Program Tracks
-
-Programming: Compilers, automatic code generation methods, cross assemblers, programming models, memory management, runtime management, object-oriented aspects, concurrent software.
-Architectures: Multicore, Many-core, re-configurable platforms, memory management support, communication, protocols, real-time systems, SoCs and DSPs, heterogeneous architectures with HW accelerators and GPUs.
-Design: Hardware specification, modeling, synthesis, low power simulation and analysis, reliability, variability compensation, thermal aware design, performance modeling, security issues.
-Interconnection Networks: Electronic/Photonic/RF NoC architectures, Power and energy issues in NoCs, Application specific NoC design, Timing, Synchronous /asynchronous communication, RTOS support for NoCs, Modeling, simulation, NoC support for MCSoC, NoC for FPGAs and structured ASICs, NoC design tools, Photonic components, Virtual fabrications, Photonic circuits, Routing, Filter design.
-Testing: Design-for-test, Test synthesis, Built-in-self-test, Embedded test for MCSoC.
-Packaging Technologies: 3D VLSI packaging Technology, Vertical Interconnections in 3D Electronics, Periphery Interconnection between Stacked ICs, Area Interconnection between Stacked ICs, Thermal management schemes.
-Real-Time Systems: real-time system design, RTOS, Compilation techniques, Memory/cache optimization, Interfacing and software issues, Distributed real-time systems, real-time kernels, Task scheduling, Multitasking design.
-Benchmarks: Parallel Benchmarks, Workload characterization and evaluation
-Applications: Bio-medical, Health-care, Computational biology, Internet of Things, Smart Mobility, Electric Vehicles, Aviation, Automobile, Military, and Consumer electronics.
-Special Sessions
-
-Special Session on Auto-Tuning for Multicore and GPU
-more to be listed here.
-Important Dates
-
-Paper submission: April 15, 2017
-Acceptance notification: June 23, 2017
-Camera ready paper: July 14, 2017
-Proceedings Publication and Indexing
-MCSoC-2017 proceedings will be published by IEEE Computer Society, which will be included in the Computer Society Digital Library CSDL and IEEE Xplore. All CPS conference publications are also submitted for indexing to EI’s Engineering  Information Index, Compendex, and ISI Thomson’s Scientific and Technical Proceedings, ISTP/ISI Proceedings, and ISI Thomson.
-Special Issue
-Authors of selected papers from IEEE MCSoC-2017 Symposium will be invited to submit extended versions of their papers to  the following journal/transaction for inclusion in special issue (TBC).
-'''
+def extract_table_topics(table: BeautifulSoup):
+    print('Extracting topics from a table')
+    lists = table.find_all('li')
+    if len(lists) > 0:
+        topics = [element.string for element in lists]
+        print('Found lists of topics:', topics)
+    else:
+        topics = [column.string for column in table.find_all('td')]
+    return topics
 
 
-extractor = EventExtractor(text, 'www.google.com')
-print(extractor._extract_dates(text))
+# Attempt to find a list of topics inside the text of the target tag
+# TODO: Unless this is trivial, don't bother
+def find_topics_in_text(tag: Tag):
+    pattern = re.compile(r'(topics?)|(subjects?)')
+    if tag.string is not None:
+        pass
+    return None
+
+
+# Looks for a list-like construction with repeated tags, e.g. repeated <span>, <div>, etc.
+def find_list_like_set(soup: BeautifulSoup):
+    # print('Trying to find list-like set of tags...')
+    siblings = [tag for tag in soup.nextSiblingGenerator() if tag.name != 'br']
+    # print('List of siblings:', siblings)
+    tagFreqs = [nltk.FreqDist([child.name for child in sib.recursiveChildGenerator() if type(child) is Tag])
+                for sib in siblings if type(sib) is Tag]
+    # print('TagFreqs:', tagFreqs)
+    # for tag in siblings:
+    #     if tag.name not in prominentTags:
+    #         prominentTags[tag.name] = 0
+    #     else:
+    #         prominentTags[tag.name] += 1
+    # for tagType in prominentTags:
+    #     if mostProminentTag[1] < prominentTags[tagType]:
+    #         mostProminentTag = tagType, prominentTags[tagType]
+    # print('Most prominent tag following topics/subject:', mostProminentTag)
+
+
+def collapse_entities(named_entities: list, entity_type: str):
+    entity_type = entity_type.upper()
+    start = False
+    entities = []
+    curEntity = ''
+
+    for entity in named_entities:
+        if start and entity[1] != entity_type:
+            if entity_type == 'DATE' and entity_is_years_list(curEntity):
+                entities.extend(curEntity.split(' '))
+            else:
+                entities.append(re.sub(r'\s+,', ',', re.sub(r'\s+', ' ', curEntity.strip())))
+            # entities.append(curEntity)
+            curEntity = ''
+
+        start = entity[1] == entity_type
+        if start:
+            curEntity += entity[0] + ' '
+            # curEntity += entity[0]
+
+    if curEntity != '':
+        print('Appending last entity:', curEntity)
+        entities.append(re.sub(r'\s+,', ',', re.sub(r'\s+', ' ', curEntity.strip())))
+    return entities
+
+
+def entity_is_years_list(entity: str):
+    is_years = False
+    year_pattern = re.compile(r'\d\d\d\d\s+(\d\d\d\d\s+)+')
+    if year_pattern.match(entity):
+        is_years = True
+        print('Entity matches year pattern:', entity)
+    return is_years
+
+
+def extract_date_features(spacy_doc, context_width=5):
+    features = []
+    date_entities = [entity for entity in spacy_doc.ents if entity.label_ == 'DATE']
+
+    for entity in date_entities:
+        start = max(0, entity.start - 1)
+        left_context = [word for word in spacy_doc[start - context_width:start]]
+        right_context = [word for word in spacy_doc[entity.end:entity.end + context_width]]
+        feature = {}
+        for word in left_context:
+            feature['left_' + str(word)] = True
+        for word in right_context:
+            feature['right_' + str(word)] = True
+
+        normalized_date = normalizeDate(entity.text)
+
+        if normalized_date is not None:
+            features.append((feature, normalized_date, entity.text))
+
+    return features
+
+
+def label_date_features(date_features: list, labeled_site: dict):
+    if labeled_site is None:
+        return None
+
+    labeled_features = []
+    found_start = False
+    found_stop = False
+
+    if labeled_site is not None and 'start' in labeled_site and 'stop' in labeled_site:
+        start_date = normalizeDate(labeled_site['start'])
+        stop_date = normalizeDate(labeled_site['stop'])
+        for feature, normalized_date, date_text in date_features:
+            if type(normalized_date) is tuple:
+                normalized_start, normalized_stop = normalized_date
+
+                if normalized_start == start_date:
+                    # print('Found start date:', normalized_start)
+                    labeled = (feature, 'start')
+                    found_start = True
+                elif normalized_stop == stop_date:
+                    # print('Found end date:', normalized_stop)
+                    labeled = (feature, 'stop')
+                    found_stop = True
+                else:
+                    labeled = (feature, 'none')
+            else:
+                # print('Start={}, stop={}, normalized={}'.format(start_date, stop_date, normalized_date))
+                if normalized_date == start_date:
+                    # print('Found start date:', date_text)
+                    labeled = (feature, 'start')
+                    found_start = True
+                elif normalized_date == stop_date:
+                    # print('Found stop date:', date_text)
+                    labeled = (feature, 'stop')
+                    found_stop = True
+                else:
+                    labeled = (feature, 'none')
+            labeled_features.append(labeled)
+
+        # if not found_start and not found_stop:
+        #     print("No start or stop found in", labeled_site['link'])
+        # else:
+        #     if not found_start:
+        #         print("No start found in", labeled_site['html'])
+        #     if not found_stop:
+        #         print("No stop found in", labeled_site['html'])
+        return labeled_features
+
+
+def parsed_site(site):
+    if 'html' in site and site['html'] is not None:
+        soup = BeautifulSoup(site['html'], 'html.parser')
+        if soup.body is not None:
+            site['parsed_html'] = nlp(soup.get_text())
+            return site
+    return None
+
+
+def get_labeled_html(jsonPath: str):
+    websites = None
+
+    with open(jsonPath) as jsonFile:
+        websites = json.load(jsonFile)
+    if websites is not None:
+        websites = [site for site in threadPool.map(parsed_site, websites[:50]) if site is not None]
+        # valid_sites = []
+        # for site in websites:
+        #     parsed = parsed_site(site)
+        #     if parsed is not None:
+        #         valid_sites.append(parsed)
+        # websites = valid_sites
+    return [site for site in websites[:50]]
+
+
+def train_date_classifier(feature_label_tuples: list):
+    return nltk.MaxentClassifier.train(feature_label_tuples)
+
+
+def classify_date(features: dict, model: nltk.NaiveBayesClassifier):
+    return model.classify(features)
+
+
+print('Loading training data...')
+training_data = get_labeled_html('../wikicfp/dev.json')
+print('Extracting date features...')
+training_date_features = [(extract_date_features(site['parsed_html']), site) for site in training_data]
+print('Labeling date features...')
+labeled_features = [feature_label for feature_list in [label_date_features(date_features, labeled_site)
+                                                       for (date_features, labeled_site) in training_date_features]
+                    for feature_label in feature_list if feature_list is not None]
+print('Finished labeling date features...')
+# print('Date features:\n', labeled_features)
+
+random.shuffle(labeled_features)
+date_model = train_date_classifier(labeled_features[:40])
+print('Date model accuracy:', nltk.classify.accuracy(date_model, labeled_features[40:]))
+
+# text = '''
+# IEEE 11th International Symposium on Embedded Multicore/Many-core Systems-on-Chip (MCSoC-2017)
+# Korea University, Seoul, Korea, September 18-20, 2017
+# Main menu
+# Skip to primary content
+# Skip to secondary content
+# MCSoC-2017
+# Committee
+# Submission
+# Registration
+# Program
+# Venue/Accommodation/Visa
+# Program Commitee
+# Contact
+# MCSoC-2017
+# The 11th IEEE MCSoC-2017 (11th IEEE International Symposium on Embedded Multicore/Many-core Systems-on-Chip) aims at providing the  world’s premier forum of leading  researchers in the embedded Multicore/Many-core SoCs software, tools and  applications design areas for Academia and industries. Prospective authors are invited to submit paper of their works. Submission of a paper implies that at least one of the authors will have a full registration to the symposium upon  acceptance of the paper.
+#
+#
+#
+# Program Tracks
+#
+# Programming: Compilers, automatic code generation methods, cross assemblers, programming models, memory management, runtime management, object-oriented aspects, concurrent software.
+# Architectures: Multicore, Many-core, re-configurable platforms, memory management support, communication, protocols, real-time systems, SoCs and DSPs, heterogeneous architectures with HW accelerators and GPUs.
+# Design: Hardware specification, modeling, synthesis, low power simulation and analysis, reliability, variability compensation, thermal aware design, performance modeling, security issues.
+# Interconnection Networks: Electronic/Photonic/RF NoC architectures, Power and energy issues in NoCs, Application specific NoC design, Timing, Synchronous /asynchronous communication, RTOS support for NoCs, Modeling, simulation, NoC support for MCSoC, NoC for FPGAs and structured ASICs, NoC design tools, Photonic components, Virtual fabrications, Photonic circuits, Routing, Filter design.
+# Testing: Design-for-test, Test synthesis, Built-in-self-test, Embedded test for MCSoC.
+# Packaging Technologies: 3D VLSI packaging Technology, Vertical Interconnections in 3D Electronics, Periphery Interconnection between Stacked ICs, Area Interconnection between Stacked ICs, Thermal management schemes.
+# Real-Time Systems: real-time system design, RTOS, Compilation techniques, Memory/cache optimization, Interfacing and software issues, Distributed real-time systems, real-time kernels, Task scheduling, Multitasking design.
+# Benchmarks: Parallel Benchmarks, Workload characterization and evaluation
+# Applications: Bio-medical, Health-care, Computational biology, Internet of Things, Smart Mobility, Electric Vehicles, Aviation, Automobile, Military, and Consumer electronics.
+# Special Sessions
+#
+# Special Session on Auto-Tuning for Multicore and GPU
+# more to be listed here.
+# Important Dates
+#
+# Paper submission: April 15, 2017
+# Acceptance notification: June 23, 2017
+# Camera ready paper: July 14, 2017
+# Proceedings Publication and Indexing
+# MCSoC-2017 proceedings will be published by IEEE Computer Society, which will be included in the Computer Society Digital Library CSDL and IEEE Xplore. All CPS conference publications are also submitted for indexing to EI’s Engineering  Information Index, Compendex, and ISI Thomson’s Scientific and Technical Proceedings, ISTP/ISI Proceedings, and ISI Thomson.
+# Special Issue
+# Authors of selected papers from IEEE MCSoC-2017 Symposium will be invited to submit extended versions of their papers to  the following journal/transaction for inclusion in special issue (TBC).
+# '''
+#
+#
+# extractor = EventExtractor(text, 'www.google.com')
+# print(extractor._extract_dates(text))

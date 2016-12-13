@@ -11,7 +11,8 @@ months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'augus
 
 
 class ConferenceExtractorBase:
-    def __init__(self, html, url):
+    def __init__(self, html, url, labeled_site=None):
+        self._labeled_site = labeled_site
         self._url = url
         self._people = None
         self._location = None
@@ -111,8 +112,8 @@ class ConferenceExtractorBase:
 
 
 class BaselineExtractor(ConferenceExtractorBase):
-    def __init__(self, html, url):
-        ConferenceExtractorBase.__init__(self, html, url)
+    def __init__(self, html, url, labeled_site=None):
+        ConferenceExtractorBase.__init__(self, html, url, labeled_site)
 
         if not self.isValidDocument:
             return
