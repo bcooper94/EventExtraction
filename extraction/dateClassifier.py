@@ -84,6 +84,15 @@ def label_date_features(date_features: list, labeled_site: dict):
         return labeled_features
 
 
+def _label_feature(site_features: list):
+    site, date_features = site_features
+    return site, label_date_features(date_features, site)
+
+
+def label_features(date_features: list):
+    return threadPool.map(_label_feature, date_features)
+
+
 def parsed_site(site):
     if 'html' in site and site['html'] is not None:
         soup = BeautifulSoup(site['html'], 'html.parser')
@@ -99,14 +108,8 @@ def get_labeled_html(jsonPath: str):
     with open(jsonPath) as jsonFile:
         websites = json.load(jsonFile)
     if websites is not None:
-        websites = [site for site in threadPool.map(parsed_site, websites[:50]) if site is not None]
-        # valid_sites = []
-        # for site in websites:
-        #     parsed = parsed_site(site)
-        #     if parsed is not None:
-        #         valid_sites.append(parsed)
-        # websites = valid_sites
-    return [site for site in websites[:50]]
+        websites = [site for site in threadPool.map(parsed_site, websites) if site is not None]
+    return [site for site in websites]
 
 
 def train_date_classifier(feature_label_tuples: list):
@@ -123,7 +126,7 @@ def classify_date(features: dict, model: nltk.NaiveBayesClassifier):
 def get_max_probability_date(label_probabilities: list, label: str):
     label_probabilities = [(date, label, probability[label]) for date, probability in label_probabilities
                            if label in probability]
-    print('Label probabilities:\n', label_probabilities)
+    # print('Label probabilities:\n', label_probabilities)
     max_prob = (None, 0)
     for date, sample, probability in label_probabilities:
         if probability > max_prob[1]:
@@ -153,64 +156,65 @@ def get_site_date_probabilities(site_features: list, model):
     return site_probabilities
 
 
-print('Loading training data...')
-training_data = get_labeled_html('../wikicfp/dev.json')
-print('Extracting date features...')
-training_date_features = [(site, extract_date_features(site['parsed_html'])) for site in training_data]
-print('Labeling date features...')
-site_labeled_features = [(labeled_site, label_date_features(date_features, labeled_site))
-                         for (labeled_site, date_features) in training_date_features]
-random.shuffle(site_labeled_features)
-training_count = int(len(site_labeled_features) * TRAINING_RATIO)
-training_site_features = site_labeled_features[:training_count]
-test_site_features = site_labeled_features[training_count:]
+def _predict_site_dates(labeled_site_features: list, model):
+    site_dates = []
+    site_probabilities = get_site_date_probabilities(labeled_site_features, model)
+    # print('Labeled probdists for each site:')
+    # for site, probabilities in site_probabilities:
+    #     print('URL={}, probs={}'.format(site['link'], probabilities))
 
-collapsed_training_data = [(feature, label) for site, feature_list in training_site_features
-                           for feature, label, date in feature_list if feature_list is not None]
-collapsed_testing_data = [(feature, label) for site, feature_list in test_site_features
+    for site, probabilities in site_probabilities:
+        dates = {}
+        for date_label in ['start', 'stop']:
+            date_prediction, label, probability = get_max_probability_date(probabilities, date_label)
+            dates[date_label] = (date_prediction, probability)
+        site_dates.append((site, dates))
+        # most_likely_start = get_max_probability_date(probabilities, 'start')
+        # most_likely_stop = get_max_probability_date(probabilities, 'stop')
+        # print('Site={}\nMost likely start:{}\nMost likely stop:{}\n'.format(
+        #     site['link'], most_likely_start, most_likely_stop))
+    return site_dates
+
+
+def train_date_model(training_sites: list):
+    all_date_features = [(site, extract_date_features(site['parsed_html'])) for site in training_sites]
+    print('Labeling date features...')
+    site_labeled_features = label_features(all_date_features)
+    # site_labeled_features = [(labeled_site, label_date_features(date_features, labeled_site))
+    #                          for (labeled_site, date_features) in all_date_features]
+    collapsed_training_data = [(feature, label) for site, feature_list in site_labeled_features
+                               for feature, label, date in feature_list if feature_list is not None]
+
+    # TODO: Compare NaiveBayes, Maxent, and DecisionTree classifiers
+    return nltk.MaxentClassifier.train(collapsed_training_data)
+
+
+def predict_dates(sites: list, model):
+    print('Extracting date features...')
+    all_date_features = [(site, extract_date_features(site['parsed_html'])) for site in sites]
+    print('Labeling date features...')
+    site_labeled_features = label_features(all_date_features)
+    return _predict_site_dates(site_labeled_features, model)
+
+
+def get_prediction_accuracy(sites: list, model):
+    site_features = [(site, extract_date_features(site['parsed_html'])) for site in sites]
+    site_labeled_features = label_features(site_features)
+    collapsed_features = [(feature, label) for site, feature_list in site_labeled_features
                           for feature, label, date in feature_list if feature_list is not None]
 
-# feature_label_date_list = [(site, feature_label) for site, feature_list in
-#                            [(labeled_site, label_date_features(date_features, labeled_site))
-#                             for (date_features, labeled_site) in
-#                             training_date_features]
-#                            for feature_label in feature_list if feature_list is not None]
-print('Finished labeling date features...')
-# print('Date features:\n', labeled_features)
-
-# random.shuffle(feature_label_date_list)
-# training_count = int(len(feature_label_date_list) * TRAINING_RATIO)
-# label_feature_tuples = [(feature, label) for (feature, label, date) in feature_label_date_list]
+    return nltk.classify.accuracy(model, collapsed_features)
 
 
-date_model = train_date_classifier(collapsed_training_data)
-print('Date model accuracy:', nltk.classify.accuracy(date_model, collapsed_testing_data))
+print('Loading training data...')
+data = get_labeled_html('../wikicfp/dev.json')
+random.shuffle(data)
+training_count = int(len(data) * TRAINING_RATIO)
 
-site_probabilities = get_site_date_probabilities(test_site_features, date_model)
-print('Labeled probdists for each site:')
-for site, probabilities in site_probabilities:
-    print('URL={}, probs={}'.format(site['link'], probabilities))
+model = train_date_model(data[:training_count])
+predicted_dates = predict_dates(data[training_count:], model)
+for site, date_predictions in predicted_dates:
+    print('Site={}, predictions={}'.format(site['link'], date_predictions))
 
-# label_probdists = [(date, date_model.prob_classify(feature))
-#                    for (feature, label, date) in feature_label_date_list[training_count:]]
-# label_probabilities = [(date, [(sample, probdist.prob(sample)) for sample in probdist.samples()])
-#                        for (date, probdist) in label_probdists]
-# # print(label_probabilities)
-# date_probabilities = []
-#
-# # print('Label probabilities:')
-# for date, label_set_probability in label_probabilities:
-#     prob_dict = {}
-#     for label, probability in label_set_probability:
-#         prob_dict[label] = probability
-#         # print('{} = {}'.format(label, probability))
-#     # print()
-#     date_probabilities.append((date, prob_dict))
-#
-
-for site, probabilities in site_probabilities:
-    print('Site={}'.format(site['link']))
-    most_likely_start = get_max_probability_date(probabilities, 'start')
-    most_likely_stop = get_max_probability_date(probabilities, 'stop')
-    print('Site={}\nMost likely start:{}\nMost likely stop:{}\n'.format(
-        site['link'], most_likely_start, most_likely_stop))
+date_classification_accuracy = get_prediction_accuracy(data[training_count:], model)
+print('Date classification accuracy:', date_classification_accuracy)
