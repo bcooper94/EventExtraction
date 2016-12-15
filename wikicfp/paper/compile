@@ -8,7 +8,7 @@ NC='\033[0m' # No Color
 #do
 #   printf "Changes detected, recompiling ...\n"
 latex -halt-on-error main.tex && 
-#bibtex main && 
+bibtex main && 
 pdflatex -halt-on-error main.tex &&
 printf "${GREEN}SUCCESS${NC}\n" ||
 printf "${RED}FAIL${NC}\n"
