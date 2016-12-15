@@ -4,6 +4,7 @@ import nltk
 import spacy
 import time
 import sys
+import re
 from concurrent.futures import ThreadPoolExecutor
 from bs4 import BeautifulSoup
 
@@ -18,6 +19,12 @@ START_DATE = 'start'
 STOP_DATE = 'stop'
 CONF_DATE = 'conference_date'
 NONE_DATE = 'none'
+
+TRUE_POS = 'true_pos'
+FALSE_POS = 'false_pos'
+TRUE_NEG = 'true_neg'
+FALSE_NEG = 'false_neg'
+
 # PREDICTED_DATE_TYPES = [START_DATE, STOP_DATE]
 PREDICTED_DATE_TYPES = [CONF_DATE]
 
@@ -30,6 +37,27 @@ possible_starts_found = 0
 possible_stops_found = 0
 possible_starts = 0
 possible_stops = 0
+
+
+def get_results(true_pos, true_neg, false_pos, false_neg):
+    accuracy = float(true_pos + true_neg) / (true_pos + true_neg + false_pos + false_neg)
+    if (true_pos + false_pos) > 0:
+        precision = float(true_pos) / (true_pos + false_pos)
+    else:
+        precision = 0.0
+    if (true_pos + false_neg) > 0:
+        recall = float(true_pos) / (true_pos + false_neg)
+    else:
+        recall = 0.0
+    if precision > 0 and recall > 0:
+        f1 = 2 * ((precision * recall) / (precision + recall))
+    else:
+        f1 = 0.0
+
+    return {
+        'accuracy': accuracy, 'precision': precision,
+        'recall': recall, 'f1': f1
+    }
 
 
 def extract_date_features(spacy_doc, context_width=5):
@@ -182,7 +210,10 @@ def parsed_site(site):
         soup = BeautifulSoup(site['html'], 'html.parser')
         if soup.body is not None:
             site['soup'] = soup
-            site['parsed_html'] = nlp(soup.get_text())
+            text = soup.get_text()
+            # text = re.sub(r'\s+', ' ', soup.body.get_text())
+            # print('Site text:\n', text)
+            site['parsed_html'] = nlp(text)
             return site
     return None
 
@@ -236,15 +267,18 @@ def get_labeled_html(jsonPath: str):
 # Get the highest probability date and its probability as a (date, probability) tuple
 # label_probabilities: list of dicts
 # label: dictionary key
-def get_max_probability_date(label_probabilities: list, label: str):
-    label_probabilities = [(date, label, probability[label]) for date, probability in label_probabilities
+def get_max_probability_date(label_probabilities: list):
+    label_probabilities = [(date, label, probability[CONF_DATE])
+                           for date, probability, label in label_probabilities
                            if label in probability]
     # print('Label probabilities:\n', label_probabilities)
     max_prob = (None, 0)
-    for date, sample, probability in label_probabilities:
+    max_label = None
+    for date, label, probability in label_probabilities:
         if probability > max_prob[1]:
             max_prob = date, probability
-    return max_prob[0], label, max_prob[1]
+            max_label = label
+    return max_prob[0], max_label, max_prob[1]
 
 
 def get_site_date_probabilities(site_features: list, model):
@@ -255,23 +289,48 @@ def get_site_date_probabilities(site_features: list, model):
     #                                            for sample in probdist.samples()]))
     #                                    for date, probdist in probabilities])
     #                            for site, probabilities in test_label_probdists]
+    true_pos = 0
+    false_pos = 0
+    true_neg = 0
+    false_neg = 0
 
     site_probabilities = []
     for site, probability_dists in test_label_probdists:
+        site_start = normalizeDate(site[START_DATE])
+        site_stop = normalizeDate(site[STOP_DATE])
+        conference_date = combine_start_stop_date(site_start, site_stop)
+
         probability_list = []
         for date, probdist in probability_dists:
             prob_dict = {}
             for sample in probdist.samples():
                 prob_dict[sample] = probdist.prob(sample)
-            probability_list.append((date, prob_dict))
+
+            predicted_label = probdist.max()
+            probability_list.append((date, prob_dict, predicted_label))
+            print('Prediction={}, actual={}, label={}'.format(date, conference_date, predicted_label))
+
+            if date == conference_date and predicted_label == CONF_DATE:
+                print('True pos. Actual={}, comparison={}'.format(date, conference_date))
+                true_pos += 1
+            elif date == conference_date and predicted_label == NONE_DATE:
+                print('False neg. Actual={}, comparison={}'.format(date, conference_date))
+                false_neg += 1
+            elif date != conference_date and predicted_label == CONF_DATE:
+                print('False pos. Actual={}, comparison={}'.format(date, conference_date))
+                false_pos += 1
+            elif date != conference_date and predicted_label == NONE_DATE:
+                print('True neg. Actual={}, comparison={}'.format(date, conference_date))
+                true_neg += 1
+
         site_probabilities.append((site, probability_list))
 
-    return site_probabilities
+    return site_probabilities, get_results(true_pos, true_neg, false_pos, false_neg)
 
 
 def _predict_site_dates(labeled_site_features: list, model):
     site_dates = []
-    site_probabilities = get_site_date_probabilities(labeled_site_features, model)
+    site_probabilities, classifier_results = get_site_date_probabilities(labeled_site_features, model)
     # print('Labeled probdists for each site:')
     # for site, probabilities in site_probabilities:
     #     print('URL={}, probs={}'.format(site['link'], probabilities))
@@ -279,7 +338,7 @@ def _predict_site_dates(labeled_site_features: list, model):
     for site, probabilities in site_probabilities:
         dates = {}
 
-        date_candidates = [date for date, prob_dict in probabilities]
+        date_candidates = [date for date, prob_dict, label in probabilities]
         # for date, prob_dict in probabilities:
         #     if type(date) is tuple:
         #         date_candidates.extend([str(date[0]), str(date[1])])
@@ -297,39 +356,39 @@ def _predict_site_dates(labeled_site_features: list, model):
         # if str(normalized_site_stop) not in str_dates:
         #     print('No stop date found for', site['link'])
 
-        for date_label in PREDICTED_DATE_TYPES:
-            date_prediction, label, probability = get_max_probability_date(probabilities, date_label)
-            dates[date_label] = (date_prediction, probability)
-        if START_DATE in dates and STOP_DATE in dates:
-            print('Checking if start and stop are tuples')
-            start_date, start_probability = dates[START_DATE]
-            stop_date, stop_probability = dates[STOP_DATE]
-            true_start = start_date
-            true_stop = stop_date
-
-            if type(start_date) is tuple and type(stop_date) is tuple:
-                print('Both start and end are tuples. Start={}, stop={}'.format(start_date, stop_date))
-                if start_probability > stop_probability:
-                    true_start, true_stop = start_date
-                else:
-                    true_start, true_stop = stop_date
-            elif type(start_date) is tuple:
-                # TODO: Check if defaulting to true_start/true_stop = the only range improves system
-                true_start, true_stop = start_date
-                print('Start is a tuple. Start={}, stop={}'.format(start_date, stop_date))
-            elif type(stop_date) is tuple:
-                true_start, true_stop = stop_date
-                print('Stop is a tuple. Start={}, stop={}'.format(start_date, stop_date))
-
-            dates[START_DATE] = true_start
-            dates[STOP_DATE] = true_stop
+        # for date_label in PREDICTED_DATE_TYPES:
+        date_prediction, label, probability = get_max_probability_date(probabilities)
+        dates[CONF_DATE] = (date_prediction, probability, label)
+        # if START_DATE in dates and STOP_DATE in dates:
+        #     print('Checking if start and stop are tuples')
+        #     start_date, start_probability = dates[START_DATE]
+        #     stop_date, stop_probability = dates[STOP_DATE]
+        #     true_start = start_date
+        #     true_stop = stop_date
+        #
+        #     if type(start_date) is tuple and type(stop_date) is tuple:
+        #         print('Both start and end are tuples. Start={}, stop={}'.format(start_date, stop_date))
+        #         if start_probability > stop_probability:
+        #             true_start, true_stop = start_date
+        #         else:
+        #             true_start, true_stop = stop_date
+        #     elif type(start_date) is tuple:
+        #         # TODO: Check if defaulting to true_start/true_stop = the only range improves system
+        #         true_start, true_stop = start_date
+        #         print('Start is a tuple. Start={}, stop={}'.format(start_date, stop_date))
+        #     elif type(stop_date) is tuple:
+        #         true_start, true_stop = stop_date
+        #         print('Stop is a tuple. Start={}, stop={}'.format(start_date, stop_date))
+        #
+        #     dates[START_DATE] = true_start
+        #     dates[STOP_DATE] = true_stop
 
         site_dates.append((site, dates))
         # most_likely_start = get_max_probability_date(probabilities, 'start')
         # most_likely_stop = get_max_probability_date(probabilities, 'stop')
         # print('Site={}\nMost likely start:{}\nMost likely stop:{}\n'.format(
         #     site['link'], most_likely_start, most_likely_stop))
-    return site_dates
+    return site_dates, classifier_results
 
 
 def train_date_model(training_sites: list):
@@ -392,7 +451,7 @@ def is_correct_date(site, date_type: str, date_prediction_confidence: dict):
         site_stop = normalizeDate(site['stop'])
         conference_date = combine_start_stop_date(site_start, site_stop)
         if conference_date is not None and date_prediction_confidence[date_type] is not None:
-            date_prediction, confidence = date_prediction_confidence[date_type]
+            date_prediction, confidence, label = date_prediction_confidence[date_type]
             # prediction = date_prediction[date_type]
             # if type(prediction) is tuple:
             #     print('Comparing actual={} to prediction={} - {}'.format(
@@ -412,26 +471,20 @@ def is_correct_date(site, date_type: str, date_prediction_confidence: dict):
 
 
 # Get the accuracy of dates compared to their known labels
-def get_date_predict_accuracy(predicted_dates: list):
-    total_counts = {}
-    correct_counts = {}
-    results = {}
-    for label in PREDICTED_DATE_TYPES:
-        total_counts[label] = 0
-        correct_counts[label] = 0
+def get_date_predict_results(predicted_dates: list):
+    correct_counts = 0
+    total_counts = 0
 
     for site, date_prediction in predicted_dates:
-        for label in PREDICTED_DATE_TYPES:
-            # if label in site:
-            total_counts[label] += 1
-            if is_correct_date(site, label, date_prediction):
-                correct_counts[label] += 1
+        total_counts += 1
+        correct = is_correct_date(site, CONF_DATE, date_prediction)
 
-    for label in PREDICTED_DATE_TYPES:
-        try:
-            results[label] = correct_counts[label] / total_counts[label]
-        except ZeroDivisionError:
-            results[label] = 'undefined'
+        if correct:
+            correct_counts += 1
+    try:
+        results = correct_counts / total_counts
+    except ZeroDivisionError:
+        results = 'undefined'
 
     return results
 
@@ -439,7 +492,7 @@ def get_date_predict_accuracy(predicted_dates: list):
 def run_single_trial(data: list, trial_num):
     print('Running trial', trial_num)
     random.shuffle(data)
-    # data = data[:30]
+    # data = data[:50]
     training_count = int(len(data) * TRAINING_RATIO)
 
     model = train_date_model(data[:training_count])
@@ -457,7 +510,7 @@ def run_single_trial(data: list, trial_num):
     except ZeroDivisionError:
         print('Division by zero')
 
-    predicted_dates = predict_dates(data[training_count:], model)
+    predicted_dates, classification_results = predict_dates(data[training_count:], model)
     for site, date_predictions in predicted_dates:
         if 'start' in site and 'stop' in site:
             start = normalizeDate(site['start'])
@@ -473,12 +526,17 @@ def run_single_trial(data: list, trial_num):
 
     date_classification_accuracy = get_classification_accuracy(data[training_count:], model)
     print('Date classification accuracy:', date_classification_accuracy)
+    print('Classification results: accuracy={}, precision={}, recall={}, F1={}'.format(
+        classification_results['accuracy'], classification_results['precision'],
+        classification_results['recall'], classification_results['f1']
+    ))
 
-    date_extraction_accuracy = get_date_predict_accuracy(predicted_dates)
+    date_extraction_accuracy = get_date_predict_results(predicted_dates)
     print('Date extraction accuracy:', date_extraction_accuracy)
     print('Tested on {} docs'.format(len(data) - training_count))
 
-    return date_extraction_accuracy, date_classification_accuracy
+    # return date_extraction_results, date_classification_accuracy
+    return date_extraction_accuracy, classification_results
 
 
 def run_trials(num_trials=5):
@@ -487,8 +545,10 @@ def run_trials(num_trials=5):
     start = time.time()
     # results = [result for result in threadPool.map(lambda trial: run_single_trial(data, trial), range(num_trials))]
     results = [result for result in map(lambda trial: run_single_trial(data, trial), range(num_trials))]
+    extraction_accuracies = [accuracy for accuracy, classify_results in results]
+    classify_results = [classify_results for accuracy, classify_results in results]
     print('Trial run time:', time.time() - start)
-    return results
+    return extraction_accuracies, classify_results
 
 
 if __name__ == '__main__':
@@ -496,10 +556,19 @@ if __name__ == '__main__':
     if len(sys.argv) > 2:
         num_trials = int(sys.argv[2])
 
-    results = run_trials(num_trials)
-    classification_accuracy = [classify_acc for extraction_acc, classify_acc in results]
-    date_extraction_accuracy = [extraction_acc[CONF_DATE] for extraction_acc, classify_acc in results]
+    extraction_accuracies, classify_results = run_trials(num_trials)
+    classification_accuracy = [result['accuracy'] for result in classify_results]
+    classify_precision = [result['precision'] for result in classify_results]
+    classify_recall = [result['recall'] for result in classify_results]
+    classify_f1 = [result['f1'] for result in classify_results]
+
+    print('Classification precisions:', classify_precision)
+    print('Classification recalls:', classify_recall)
+    print('Classification F1s:', classify_f1)
     print('Classification accuracies:', classification_accuracy)
     print('Classification average accuracy:', sum(classification_accuracy) / len(classification_accuracy))
-    print('Date extraction accuracies:', date_extraction_accuracy)
-    print('Date extraction average accuracy:', sum(date_extraction_accuracy) / len(date_extraction_accuracy))
+    print('Classification avg precision:', sum(classify_precision) / len(classify_precision))
+    print('Classification avg recall:', sum(classify_recall) / len(classify_recall))
+    print('Classification avg F1:', sum(classify_f1) / len(classify_f1))
+    print('Date extraction accuracies:', extraction_accuracies)
+    print('Date extraction average accuracy:', sum(extraction_accuracies) / len(extraction_accuracies))
