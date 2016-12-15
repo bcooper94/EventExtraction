@@ -43,7 +43,8 @@ def normalizeDate(date: str):
 
     if date is not None:
         if year_only_pattern.match(date.strip()):
-            normalized_date = CFPDate(dateParser.parse(date.strip()), is_year_only=True)
+            return None
+            # normalized_date = CFPDate(dateParser.parse(date.strip()), is_year_only=True)
         # date = re.sub(r'[]', re.sub(r'\s+', ' ', date))
         # check for and handle date ranges (i.e. June 30th‒July 1st 2017, 12/30 - 12/31/17)
         else:

@@ -51,6 +51,7 @@ def extract_date_features(spacy_doc, context_width=5):
         # text_location = int((entity.start + entity.end) / 2)
         # feature['_location'] = text_location
 
+        # Toss this feature if we can't parse a date
         if normalized_date is not None:
             features.append((feature, normalized_date, entity.text))
 
@@ -157,9 +158,33 @@ def parsed_site(site):
     if 'html' in site and site['html'] is not None:
         soup = BeautifulSoup(site['html'], 'html.parser')
         if soup.body is not None:
+            site['soup'] = soup
             site['parsed_html'] = nlp(soup.get_text())
             return site
     return None
+
+
+def determine_site_languages(sites: list):
+    site_languages = []
+    for site in sites:
+        language = None
+        if 'soup' in site:
+            print('Determining language for', site['link'])
+            soup = site['soup']
+            if soup.html is not None and 'lang' in soup.html.attrs:
+                lang_attr = soup.html.attrs['lang']
+                print('Lang attrs:', lang_attr)
+                language = str(lang_attr).lower()
+
+                # lang_attr = soup.html['lang']
+                # print('Language of {}: {}'.format(site['link'], lang_attr))
+            meta_tags = [tag for tag in soup.find_all('meta')
+                         if 'lang' in tag or 'property' in tag
+                         and 'locale' in str(tag['property']).lower()]
+            if len(meta_tags) > 0:
+                print('Language from meta tags in {}: {}'.format(site['link'], meta_tags[0]['content']))
+        site_languages.append((site, language))
+    return site_languages
 
 
 def get_labeled_html(jsonPath: str):
@@ -172,6 +197,18 @@ def get_labeled_html(jsonPath: str):
     if websites is not None:
         # TODO: Remove 50 site limit
         websites = [site for site in threadPool.map(parsed_site, websites) if site is not None]
+        lang_labeled_sites = [(site, lang) for site, lang in determine_site_languages(websites)
+                              if lang is None or lang.startswith('en')]
+        print('Threw out {} sites b/c of language'.format(len(websites) - len(lang_labeled_sites)))
+        unlabeled_sites = [site for site, lang in lang_labeled_sites if lang is None]
+        print('Language not labeled for {} sites'.format(len(unlabeled_sites)))
+        websites = [site for site, lang in lang_labeled_sites]
+    # for website in websites:
+    #     if 'parsed_html' in website:
+    #         langs = [str(token.lang_) for token in website['parsed_html']]
+    #         if any(lang != 'en' for lang in langs):
+    #             print('Doc language for {}: {}'.format(website['link'],
+    #                                                    website['parsed_html'][0].lang_))
     return [site for site in websites]
 
 
