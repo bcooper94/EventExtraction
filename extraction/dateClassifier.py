@@ -2,6 +2,8 @@ import json
 import random
 import nltk
 import spacy
+import time
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from bs4 import BeautifulSoup
 
@@ -14,7 +16,10 @@ nlp = spacy.load('en')
 
 START_DATE = 'start'
 STOP_DATE = 'stop'
-PREDICTED_DATE_TYPES = [START_DATE, STOP_DATE]
+CONF_DATE = 'conference_date'
+NONE_DATE = 'none'
+# PREDICTED_DATE_TYPES = [START_DATE, STOP_DATE]
+PREDICTED_DATE_TYPES = [CONF_DATE]
 
 starts_found = 0
 start_not_found = 0
@@ -46,16 +51,27 @@ def extract_date_features(spacy_doc, context_width=5):
             # feature[str(word.lemma_).lower()] = True
 
         normalized_date = normalizeDate(entity.text)
-        # if type(normalized_date) is tuple:
-        #     feature['_is_range'] = True
-        # text_location = int((entity.start + entity.end) / 2)
-        # feature['_location'] = text_location
+        if type(normalized_date) is tuple:
+            feature['_is_range'] = True
+        text_location = int((entity.start + entity.end) / 2)
+        feature['_location'] = text_location
 
         # Toss this feature if we can't parse a date
         if normalized_date is not None:
             features.append((feature, normalized_date, entity.text))
 
     return features
+
+
+def combine_start_stop_date(start, stop):
+    combined_date = None
+    if start is not None and stop is not None:
+        if start == stop:
+            combined_date = start
+        else:
+            combined_date = (start, stop)
+
+    return combined_date
 
 
 def label_date_features(date_features: list, labeled_site: dict):
@@ -78,6 +94,8 @@ def label_date_features(date_features: list, labeled_site: dict):
     if labeled_site is not None and 'start' in labeled_site and 'stop' in labeled_site:
         start_date = normalizeDate(labeled_site['start'])
         stop_date = normalizeDate(labeled_site['stop'])
+        conference_date = combine_start_stop_date(start_date, stop_date)
+
         start_str = str(start_date)
         stop_str = str(stop_date)
         possible_dates = [str(normalized_date) for feature, normalized_date, date_text in date_features]
@@ -89,59 +107,63 @@ def label_date_features(date_features: list, labeled_site: dict):
             possible_stops_found += 1
 
         for feature, normalized_date, date_text in date_features:
-            if type(normalized_date) is tuple:
-                normalized_start, normalized_stop = normalized_date
-
-                if normalized_start == normalized_stop:
-                    print('Tuple start == stop:', normalized_date)
-                if normalized_start == start_date:
-                    print('Found start date from tuple:', normalized_start)
-                    labeled = (feature, 'start', normalized_start)
-                    found_start = True
-                elif normalized_start == stop_date:
-                    print('Found stop date in normalized_start in tuple:', normalized_start)
-                    found_stop = True
-                    labeled = (feature, 'stop', normalized_start)
-                elif normalized_stop == stop_date:
-                    print('Found end date from tuple:', normalized_stop)
-                    labeled = (feature, 'stop', normalized_stop)
-                    found_stop = True
-                elif normalized_stop == start_date:
-                    print('Found start date in normalized_stop in tuple:', normalized_stop)
-                    found_start = True
-                    labeled = (feature, 'start', normalized_stop)
-                else:
-                    labeled = (feature, 'none', normalized_date)
+            if normalized_date == conference_date:
+                labeled = (feature, CONF_DATE, normalized_date)
             else:
-                # print('Start={}, stop={}, normalized={}'.format(start_date, stop_date, normalized_date))
-                if normalized_date == start_date:
-                    print('Found start date:', date_text)
-                    labeled = (feature, 'start', normalized_date)
-                    found_start = True
-                elif normalized_date == stop_date:
-                    print('Found stop date:', date_text)
-                    labeled = (feature, 'stop', normalized_date)
-                    found_stop = True
-                else:
-                    labeled = (feature, 'none', normalized_date)
+                labeled = (feature, NONE_DATE, normalized_date)
+            # if type(normalized_date) is tuple:
+            #     normalized_start, normalized_stop = normalized_date
+            #
+            #     if normalized_start == normalized_stop:
+            #         print('Tuple start == stop:', normalized_date)
+            #     if normalized_start == start_date:
+            #         print('Found start date from tuple:', normalized_start)
+            #         labeled = (feature, 'start', normalized_start)
+            #         found_start = True
+            #     elif normalized_start == stop_date:
+            #         print('Found stop date in normalized_start in tuple:', normalized_start)
+            #         found_stop = True
+            #         labeled = (feature, 'stop', normalized_start)
+            #     elif normalized_stop == stop_date:
+            #         print('Found end date from tuple:', normalized_stop)
+            #         labeled = (feature, 'stop', normalized_stop)
+            #         found_stop = True
+            #     elif normalized_stop == start_date:
+            #         print('Found start date in normalized_stop in tuple:', normalized_stop)
+            #         found_start = True
+            #         labeled = (feature, 'start', normalized_stop)
+            #     else:
+            #         labeled = (feature, 'none', normalized_date)
+            # else:
+            #     # print('Start={}, stop={}, normalized={}'.format(start_date, stop_date, normalized_date))
+            #     if normalized_date == start_date:
+            #         print('Found start date:', date_text)
+            #         labeled = (feature, 'start', normalized_date)
+            #         found_start = True
+            #     elif normalized_date == stop_date:
+            #         print('Found stop date:', date_text)
+            #         labeled = (feature, 'stop', normalized_date)
+            #         found_stop = True
+            #     else:
+            #         labeled = (feature, 'none', normalized_date)
             labeled_features.append(labeled)
 
-        if found_start:
-            starts_found += 1
-        else:
-            start_not_found += 1
-        if found_stop:
-            stops_found += 1
-        else:
-            stop_not_found += 1
-
-        if not found_start and not found_stop:
-            print("No start or stop found in", labeled_site['link'])
-        else:
-            if not found_start:
-                print("No start found in", labeled_site['link'])
-            if not found_stop:
-                print("No stop found in", labeled_site['link'])
+        # if found_start:
+        #     starts_found += 1
+        # else:
+        #     start_not_found += 1
+        # if found_stop:
+        #     stops_found += 1
+        # else:
+        #     stop_not_found += 1
+        #
+        # if not found_start and not found_stop:
+        #     print("No start or stop found in", labeled_site['link'])
+        # else:
+        #     if not found_start:
+        #         print("No start found in", labeled_site['link'])
+        #     if not found_stop:
+        #         print("No stop found in", labeled_site['link'])
         return labeled_features
 
 
@@ -151,7 +173,8 @@ def _label_feature(site_features: list):
 
 
 def label_features(date_features: list):
-    return threadPool.map(_label_feature, date_features)
+    # return threadPool.map(_label_feature, date_features)
+    return map(_label_feature, date_features)
 
 
 def parsed_site(site):
@@ -192,8 +215,6 @@ def get_labeled_html(jsonPath: str):
 
     with open(jsonPath) as jsonFile:
         websites = json.load(jsonFile)
-        # TODO: remove shuffle
-        random.shuffle(websites)
     if websites is not None:
         # TODO: Remove 50 site limit
         websites = [site for site in threadPool.map(parsed_site, websites) if site is not None]
@@ -210,14 +231,6 @@ def get_labeled_html(jsonPath: str):
     #             print('Doc language for {}: {}'.format(website['link'],
     #                                                    website['parsed_html'][0].lang_))
     return [site for site in websites]
-
-
-def train_date_classifier(feature_label_tuples: list):
-    return nltk.MaxentClassifier.train(feature_label_tuples)
-
-
-def classify_date(features: dict, model: nltk.NaiveBayesClassifier):
-    return model.classify(features)
 
 
 # Get the highest probability date and its probability as a (date, probability) tuple
@@ -266,20 +279,23 @@ def _predict_site_dates(labeled_site_features: list, model):
     for site, probabilities in site_probabilities:
         dates = {}
 
-        str_dates = []
-        for date, prob_dict in probabilities:
-            if type(date) is tuple:
-                str_dates.extend([str(date[0]), str(date[1])])
-            else:
-                str_dates.append(str(date))
+        date_candidates = [date for date, prob_dict in probabilities]
+        # for date, prob_dict in probabilities:
+        #     if type(date) is tuple:
+        #         date_candidates.extend([str(date[0]), str(date[1])])
+        #     else:
+        #         date_candidates.append(str(date))
         normalized_site_start = normalizeDate(site['start'])
         normalized_site_stop = normalizeDate(site['stop'])
-        print('Site start={}, stop={}, predictions={}'.format(str(normalized_site_start), str(normalized_site_stop),
-                                                              str_dates))
-        if str(normalized_site_start) not in str_dates:
-            print('No start date found for', site['link'])
-        if str(normalized_site_stop) not in str_dates:
-            print('No stop date found for', site['link'])
+        conference_date = combine_start_stop_date(normalized_site_start, normalized_site_stop)
+        print('Site conference_date={}, predictions={}'.format(conference_date, date_candidates))
+
+        if conference_date not in date_candidates:
+            print('No conference date found for', site['link'])
+        # if str(normalized_site_start) not in str_dates:
+        #     print('No start date found for', site['link'])
+        # if str(normalized_site_stop) not in str_dates:
+        #     print('No stop date found for', site['link'])
 
         for date_label in PREDICTED_DATE_TYPES:
             date_prediction, label, probability = get_max_probability_date(probabilities, date_label)
@@ -339,8 +355,13 @@ def train_date_model(training_sites: list):
     collapsed_training_data = [(feature, label) for site, feature_list in site_labeled_features
                                for feature, label, date in feature_list if feature_list is not None]
 
-    # TODO: Compare NaiveBayes, Maxent, and DecisionTree classifiers
-    return nltk.NaiveBayesClassifier.train(collapsed_training_data)
+    # TODO: Compare NaiveBayes and Maxent classifiers
+    if len(sys.argv) > 1 and sys.argv[1].lower() == 'nb':
+        model = nltk.NaiveBayesClassifier.train(collapsed_training_data)
+    else:
+        model = nltk.MaxentClassifier.train(collapsed_training_data)
+
+    return model
 
 
 # Predict the conference start/end date and submission date for each site in sites
@@ -363,19 +384,29 @@ def get_classification_accuracy(sites: list, model):
     return nltk.classify.accuracy(model, collapsed_features)
 
 
-def is_correct_date(site, date_type: str, date_prediction: dict):
+def is_correct_date(site, date_type: str, date_prediction_confidence: dict):
     date_is_correct = False
-    if date_type in site:
-        normalized_site_date = normalizeDate(site[date_type])
-        if normalized_site_date is not None and date_prediction[date_type] is not None:
-            prediction = date_prediction[date_type]
-            if type(prediction) is tuple:
-                print('Comparing actual={} to prediction={} - {}'.format(
-                    normalized_site_date.isoformat(), start.isoformat(), stop.isoformat()))
-            else:
-                print('Comparing actual={} to prediction={}'.format(normalized_site_date.isoformat(),
-                                                                    prediction.isoformat()))
-        date_is_correct = normalized_site_date == date_prediction[date_type]
+    if START_DATE in site and STOP_DATE in site:
+        # normalized_site_date = normalizeDate(site[date_type])
+        site_start = normalizeDate(site['start'])
+        site_stop = normalizeDate(site['stop'])
+        conference_date = combine_start_stop_date(site_start, site_stop)
+        if conference_date is not None and date_prediction_confidence[date_type] is not None:
+            date_prediction, confidence = date_prediction_confidence[date_type]
+            # prediction = date_prediction[date_type]
+            # if type(prediction) is tuple:
+            #     print('Comparing actual={} to prediction={} - {}'.format(
+            #         conference_date, start.isoformat(), stop.isoformat()))
+            # else:
+            #     print('Comparing actual={} to prediction={}'.format(normalized_site_date.isoformat(),
+            #                                                         prediction.isoformat()))
+            date_is_correct = conference_date == date_prediction
+            print('Site={}, Dates equal? {}. Actual conference date={} to prediction={}, confidence={}'.format(
+                site['link'], date_is_correct, conference_date,
+                date_prediction, confidence
+            ))
+    else:
+        print('No start/stop in site:', site['link'])
 
     return date_is_correct
 
@@ -391,52 +422,84 @@ def get_date_predict_accuracy(predicted_dates: list):
 
     for site, date_prediction in predicted_dates:
         for label in PREDICTED_DATE_TYPES:
-            if label in site:
-                total_counts[label] += 1
-                if is_correct_date(site, label, date_prediction):
-                    correct_counts[label] += 1
+            # if label in site:
+            total_counts[label] += 1
+            if is_correct_date(site, label, date_prediction):
+                correct_counts[label] += 1
 
     for label in PREDICTED_DATE_TYPES:
-        results[label] = correct_counts[label] / total_counts[label]
+        try:
+            results[label] = correct_counts[label] / total_counts[label]
+        except ZeroDivisionError:
+            results[label] = 'undefined'
 
     return results
 
 
-print('Loading training data...')
-data = get_labeled_html('../wikicfp/dev.json')
-# random.shuffle(data)
-training_count = int(len(data) * TRAINING_RATIO)
+def run_single_trial(data: list, trial_num):
+    print('Running trial', trial_num)
+    random.shuffle(data)
+    # data = data[:30]
+    training_count = int(len(data) * TRAINING_RATIO)
 
-model = train_date_model(data[:training_count])
-print('Found {} starts out of {} total. Accuracy = {}'.format(starts_found, starts_found + start_not_found,
-                                                              starts_found / (starts_found + start_not_found)))
-print('Found {} stops out of {} total. Accuracy = {}'.format(stops_found, stops_found + stop_not_found,
-                                                             stops_found / (stops_found + stop_not_found)))
-print('There were {} possible starts out of {} total. Accuracy = {}'.format(
-    possible_starts_found, possible_starts, possible_starts_found / possible_starts
-))
-print('There were {} possible stops out of {} total. Accuracy = {}'.format(
-    possible_stops_found, possible_stops, possible_stops_found / possible_stops
-))
+    model = train_date_model(data[:training_count])
+    try:
+        print('Found {} starts out of {} total. Accuracy = {}'.format(starts_found, starts_found + start_not_found,
+                                                                      starts_found / (starts_found + start_not_found)))
+        print('Found {} stops out of {} total. Accuracy = {}'.format(stops_found, stops_found + stop_not_found,
+                                                                     stops_found / (stops_found + stop_not_found)))
+        print('There were {} possible starts out of {} total. Accuracy = {}'.format(
+            possible_starts_found, possible_starts, possible_starts_found / possible_starts
+        ))
+        print('There were {} possible stops out of {} total. Accuracy = {}'.format(
+            possible_stops_found, possible_stops, possible_stops_found / possible_stops
+        ))
+    except ZeroDivisionError:
+        print('Division by zero')
 
-predicted_dates = predict_dates(data[training_count:], model)
-for site, date_predictions in predicted_dates:
-    if 'start' in site and 'stop' in site:
-        start = normalizeDate(site['start'])
-        stop = normalizeDate(site['stop'])
-        if start is not None and stop is not None:
-            print('Site={}, start={}, stop={}, predictions={}'.format(
-                site['link'], start, stop, date_predictions))
+    predicted_dates = predict_dates(data[training_count:], model)
+    for site, date_predictions in predicted_dates:
+        if 'start' in site and 'stop' in site:
+            start = normalizeDate(site['start'])
+            stop = normalizeDate(site['stop'])
+            if start is not None and stop is not None:
+                print('Site={}, start={}, stop={}, predictions={}'.format(
+                    site['link'], start, stop, date_predictions))
+            else:
+                print('Unable to determine start/stop for', site['link'])
+
         else:
             print('Unable to determine start/stop for', site['link'])
 
-    else:
-        print('Unable to determine start/stop for', site['link'])
+    date_classification_accuracy = get_classification_accuracy(data[training_count:], model)
+    print('Date classification accuracy:', date_classification_accuracy)
 
-date_classification_accuracy = get_classification_accuracy(data[training_count:], model)
-print('Date classification accuracy:', date_classification_accuracy)
+    date_extraction_accuracy = get_date_predict_accuracy(predicted_dates)
+    print('Date extraction accuracy:', date_extraction_accuracy)
+    print('Tested on {} docs'.format(len(data) - training_count))
 
-date_extraction_accuracy = get_date_predict_accuracy(predicted_dates)
-print('Date extraction accuracy:', date_extraction_accuracy)
+    return date_extraction_accuracy, date_classification_accuracy
 
-print('Tested on {} docs'.format(len(data) - training_count))
+
+def run_trials(num_trials=5):
+    print('Loading training data...')
+    data = get_labeled_html('../wikicfp/dev.json')
+    start = time.time()
+    # results = [result for result in threadPool.map(lambda trial: run_single_trial(data, trial), range(num_trials))]
+    results = [result for result in map(lambda trial: run_single_trial(data, trial), range(num_trials))]
+    print('Trial run time:', time.time() - start)
+    return results
+
+
+if __name__ == '__main__':
+    num_trials = 5
+    if len(sys.argv) > 2:
+        num_trials = int(sys.argv[2])
+
+    results = run_trials(num_trials)
+    classification_accuracy = [classify_acc for extraction_acc, classify_acc in results]
+    date_extraction_accuracy = [extraction_acc[CONF_DATE] for extraction_acc, classify_acc in results]
+    print('Classification accuracies:', classification_accuracy)
+    print('Classification average accuracy:', sum(classification_accuracy) / len(classification_accuracy))
+    print('Date extraction accuracies:', date_extraction_accuracy)
+    print('Date extraction average accuracy:', sum(date_extraction_accuracy) / len(date_extraction_accuracy))
