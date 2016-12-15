@@ -35,6 +35,7 @@ def scrape_page(html):
 
    # check for duplicates
    if name in EXISTS:
+      print('----- Duplicate ----- {}'.format(name))
       return
   
    tables = soup.find_all('table')
