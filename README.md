@@ -1,5 +1,7 @@
 # EventExtraction
 
+Developed by Brandon Cooper, Joey Wilson, and Tobias Bleisch
+
 ## Stanford CoreNLP Installation
 In order to run the Baseline.py using Stanford CoreNLP, you have to add the following environmental variables:
 
