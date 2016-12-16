@@ -1,0 +1,19 @@
+Corpus from WikiCFP
+Joey Wilson jwilso43@calpoly.edu
+
+----- Dependecies -----
+python2
+
+beautiful soup
+https://www.crummy.com/software/BeautifulSoup/
+
+requests
+http://docs.python-requests.org/en/master/user/install/#install
+
+----- To Run -----
+python scrape.py
+
+This will create a file called output.json with all of the scraped output.
+This file should be placed in the locations directory to run the where.py file
+
+*Note this is run with python 2 not python 3

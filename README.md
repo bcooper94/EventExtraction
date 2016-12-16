@@ -1,5 +1,10 @@
 # EventExtraction
 
+For information about the corpus refer to the corpus folder
+
+To run the location system refer to the README in the location folder
+
+
 Developed by Brandon Cooper, Joey Wilson, and Tobias Bleisch
 
 ## Stanford CoreNLP Installation
