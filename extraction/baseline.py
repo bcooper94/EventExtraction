@@ -113,7 +113,19 @@ class ConferenceExtractorBase:
 
 class BaselineExtractor(ConferenceExtractorBase):
     def __init__(self, html, url, labeled_site=None):
-        ConferenceExtractorBase.__init__(self, html, url, labeled_site)
+        # Get rid of weird unicode symbols
+        filtered_html = ''
+        if html is not None:
+            for char in html:
+                try:
+                    char.encode('ascii')
+                    filtered_html += char
+                except Exception:
+                    pass
+        else:
+            filtered_html = None
+
+        ConferenceExtractorBase.__init__(self, filtered_html, url, labeled_site)
 
         if not self.isValidDocument:
             return
@@ -133,7 +145,7 @@ class BaselineExtractor(ConferenceExtractorBase):
 
         # Location: take the first entity tagged with LOCATION
         location = self._extract_first_entity(namedEntities, 'LOCATION')
-        if len(location) > 0:
+        if location and len(location) > 0:
             self.location = location
 
         abstractDate = ['abstract', 'summary', 'proposal']
@@ -142,7 +154,8 @@ class BaselineExtractor(ConferenceExtractorBase):
 
         dates = self._extract_dates(txt)
         conference = self._extract_first_entity(namedEntities, 'ORGANIZATION')
-        if len(conference) > 0:
+
+        if conference and len(conference) > 0:
             self.conference = conference
         self.topics = self._extract_topics(self.webpage.body)
 
@@ -189,11 +202,11 @@ class BaselineExtractor(ConferenceExtractorBase):
         labeled_entities = []
 
         for entity in entities:
-            # print(entity)
+            if type(entity) is tuple:
+                entity = entity[0]
             context = self._get_context(text, entity).lower()
             if ':' in context:
                 context = context[:context.find(':')]
-            # print('context:  ' + context)
             for labelList in entity_labels:
                 seen = False
                 for label in labelList:
@@ -216,34 +229,65 @@ class BaselineExtractor(ConferenceExtractorBase):
 
         return text[beg - range: end + range]
 
-    # use a bunch of awful regexes to recognize some shitty dates off these damn sites
+    # # use a bunch of awful regexes to recognize some shitty dates off these damn sites
+    # def _extract_dates(self, text):
+    #     dates = re.findall(r'(\d+/\d+/\d+)', text)  # '12/30/1994 and anstr(other one) 5/23/16')
+    #     dates += re.findall(r'(\d+.*-\d+.*(([Jj]anuary)|([Ff]ebruary])|([Mm]arch)|([Aa]pril)|([Mm]ay)|([Jj]une)|'
+    #                         r'([Jj]uly)|([Aa]ugust)|([Ss]eptember)|([Oo]ctober)|([Nn]ovember)|([Dd]ecember))'
+    #                         r'\d*)', text)
+    #     dates += re.findall(r'(\d{2}[/.-]\d{2}[/.-]\d{4})', text)  # '2-24-6575 and a second one 23/34/6445')
+    #     # dates += re.findall(r"(\w+)\s(\d?\d),?\s?'?(\d{4})", text) #'November 23, 2018')
+    #     dates += re.findall(r"\d{1,2}\s[A-Za-z]+,?\s?'?\d{4}",
+    #                         text)  # "23 November 3942 and 3 November '48 and 23 November, 3948")
+    #     dates += re.findall(r'(\d+\.\d+\.\d+)', text)  # 12.20.2001 format
+    #     # dates += re.findall(r"(\w+)\s(\d{1,2})[trs][tdh]\s?,?\s?(\d{4})?", text)
+    #     # ew = re.findall(r"((?:[A-Za-z]+\s\d{1,2}(?:[trs][tdh])?(?:-\d{1,2}(?:[trs][tdh])?)?\s*[‒-]\s*)?([A-Za-z]+)\s\d{1,2}(?:[trs][tdh])?(?:\s*-\s*\d{1,2}(?:[trs][tdh])?)?,?(?:\s\d{4}?)?)", text)
+    #     ew = re.findall(r"((?:\d{2}\s)?(?:[A-Za-z]+\s\d{1,2}(?:[trs][tdh])?(?:-\d{1,2}"
+    #                     r"(?:[trs][tdh])?)?\s*[‒-]\s*)?([A-Za-z]+)\s(?:\d{4}|\d{1,2})"
+    #                     r"(?:[trs][tdh])?(?:\s*-\s*\d{1,2}(?:[trs][tdh])?)?,?"
+    #                     r"(?:\s\d{4}?)?)", text)
+    #
+    #     # regex isn't perfect, so it only keeps dates with words that are months
+    #     for gross in ew:
+    #         if gross[1].lower() in months:
+    #             bool = False
+    #             for date in dates:
+    #                 bool = bool or gross[0] in date
+    #             if not bool:
+    #                 dates.append(gross[0])
+    #
+    #     return set(dates)
+
+        # use regexes to match a set of candidate dates from the input text
+        # returns a list of tuples, one tuple per date match
+        # tuple contains: (text of date, start pos, end pos)
     def _extract_dates(self, text):
-        dates = re.findall(r'(\d+/\d+/\d+)', text)  # '12/30/1994 and anstr(other one) 5/23/16')
-        dates += re.findall(r'(\d+.*-\d+.*(([Jj]anuary)|([Ff]ebruary])|([Mm]arch)|([Aa]pril)|([Mm]ay)|([Jj]une)|'
-                            r'([Jj]uly)|([Aa]ugust)|([Ss]eptember)|([Oo]ctober)|([Nn]ovember)|([Dd]ecember))'
-                            r'\d*)', text)
-        dates += re.findall(r'(\d{2}[/.-]\d{2}[/.-]\d{4})', text)  # '2-24-6575 and a second one 23/34/6445')
+        dates = []
+        iters = []
+
+        iters += re.finditer(r'(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4})', text)  # '2-24-6575 and a second one 23/34/6445')
+
+        # add the match to our list of dates
+        for match in iters:
+            dates.append((match.group(), match.start(), match.end()))
+
         # dates += re.findall(r"(\w+)\s(\d?\d),?\s?'?(\d{4})", text) #'November 23, 2018')
-        dates += re.findall(r"\d{1,2}\s[A-Za-z]+,?\s?'?\d{4}",
-                            text)  # "23 November 3942 and 3 November '48 and 23 November, 3948")
-        dates += re.findall(r'(\d+\.\d+\.\d+)', text)  # 12.20.2001 format
+        potential_matches = []
+        potential_matches.append(re.finditer(r"((?:\d{1,2}\s?[‒-]?\s?)?\d{1,2}\s[A-Za-z]+,?\s?'?\d{2,4})",
+                                             text))  # "23 November 3942 and 3 November '48 and 23 November, 3948")
         # dates += re.findall(r"(\w+)\s(\d{1,2})[trs][tdh]\s?,?\s?(\d{4})?", text)
-        # ew = re.findall(r"((?:[A-Za-z]+\s\d{1,2}(?:[trs][tdh])?(?:-\d{1,2}(?:[trs][tdh])?)?\s*[‒-]\s*)?([A-Za-z]+)\s\d{1,2}(?:[trs][tdh])?(?:\s*-\s*\d{1,2}(?:[trs][tdh])?)?,?(?:\s\d{4}?)?)", text)
-        ew = re.findall(r"((?:\d{2}\s)?(?:[A-Za-z]+\s\d{1,2}(?:[trs][tdh])?(?:-\d{1,2}"
-                        r"(?:[trs][tdh])?)?\s*[‒-]\s*)?([A-Za-z]+)\s(?:\d{4}|\d{1,2})"
-                        r"(?:[trs][tdh])?(?:\s*-\s*\d{1,2}(?:[trs][tdh])?)?,?"
-                        r"(?:\s\d{4}?)?)", text)
+        potential_matches.append(re.finditer(r"((?:\d{2}\s)?(?:[A-Za-z]+\s\d{1,2}(?:[trs][tdh])?(?:-\d{1,2}" +
+                                             r"(?:[trs][tdh])?)?\s*[‒-]\s*)?([A-Za-z]+)\s(?:\d{4}|\d{1,2})" +
+                                             r"(?:[trs][tdh])?(?:\s*-\s*\d{1,2}(?:[trs][tdh])?)?,?" +
+                                             r"(?:\s\d{4}?)?)", text))  # "September 18-20, 2017", "April 15, 2017",
 
-        # regex isn't perfect, so it only keeps dates with words that are months
-        for gross in ew:
-            if gross[1].lower() in months:
-                bool = False
-                for date in dates:
-                    bool = bool or gross[0] in date
-                if not bool:
-                    dates.append(gross[0])
+        # add the match to our list of dates if the match contains a month or month abbreviation
+        for iterator in potential_matches:
+            for match in iterator:
+                if any(month.lower() in match.group().lower() for month in months):
+                    dates.append((match.group(), match.start(), match.end()))
 
-        return set(dates)
+        return dates
 
     def _extract_first_email(self, text):
         firstEmail = None
