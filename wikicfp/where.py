@@ -133,19 +133,20 @@ def build_feature_list(data, states, countries):
    feature_list = []
    
    for d in data:
-      print(d['link'])
+      #print(d['link'])
       if d['where']:
          ccs = d['where'].split(',')
          if len(ccs) >= 2:
             if len(ccs) == 3 and not is_state_or_country(ccs[1], states, countries):
-               print('ccs length 3 ', ccs)
+               #print('ccs length 3 ', ccs)
                ccs[1] = ccs[2] 
             city = ccs[0].strip()
             country_or_state = ccs[1].strip()
             locations = get_locations(d['html'], states, countries)
-            print(city, country_or_state)
+            #print(city, country_or_state)
             if len(locations) == 0:
-               print('No locations found')
+               #print('No locations found')
+               noop = 0
             else:
                for l in locations:
                   answer = False
@@ -153,9 +154,11 @@ def build_feature_list(data, states, countries):
                      answer = True
                   feature_list.append((extract_features(l), answer))
          else:
-            print('No city or country: {}'.format(ccs))
+            #print('No city or country: {}'.format(ccs))
+            noop = 0
       else:
-         print('No where found')
+         #print('No where found')
+         noop = 0
 
    return feature_list
 
@@ -168,8 +171,8 @@ def run(training_data, test_data, states, countries):
    me = nltk.MaxentClassifier.train(training_features)
    dt = nltk.DecisionTreeClassifier.train(training_features)
 
-   print(len(training_features))
-   print(len(test_features))
+   #print(len(training_features))
+   #print(len(test_features))
 
    for classifier in [nb, me, dt]:
 
@@ -197,14 +200,22 @@ def run(training_data, test_data, states, countries):
       recall = float(tp)/(tp+fn)
       f1 = 2 * ((precision*recall)/(precision+recall))
 
+      name = ''
+      if classifier == nb:
+         name = 'nb'    
+      elif classifier == me:
+         name = 'me'    
+      elif classifier == dt:
+         name = 'dt'    
+
       print('''
          Location Results
-         Accuracy: {}
-         Precision: {}
-         Recall: {}
-         f1: {}
+         {0}-accuracy: {1}
+         {0}-precision: {2}
+         {0}-recall: {3}
+         {0}-f1: {4}
          \n
-      '''.format(accuracy, precision, recall, f1))
+      '''.format(name, accuracy, precision, recall, f1))
 
 def main():
    f = open('./output.json')
