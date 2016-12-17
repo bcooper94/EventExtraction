@@ -360,7 +360,6 @@ def get_date_predict_results(predicted_dates: list):
 def run_single_trial(data: list, trial_num):
     print('Running trial', trial_num)
     random.shuffle(data)
-    # data = data[:50]
     training_count = int(len(data) * TRAINING_RATIO)
     model = train_date_model(data[:training_count])
 
@@ -409,7 +408,7 @@ def run_single_trial(data: list, trial_num):
 
 def run_trials(num_trials=5):
     print('Loading training data...')
-    data = get_labeled_html('../wikicfp/dev.json')
+    data = get_labeled_html('../corpus/output.json')
     start = time.time()
     # results = [result for result in threadPool.map(lambda trial: run_single_trial(data, trial), range(num_trials))]
     results = [result for result in map(lambda trial: run_single_trial(data, trial), range(num_trials))]

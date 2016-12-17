@@ -48,62 +48,61 @@ class EventExtractor(ConferenceExtractorBase):
             return
 
         txt = self.webpage.body.get_text()
-        # tokenizedText = nltk.word_tokenize(txt)
-        # stanfordTagger = StanfordNERTagger(model_filename='english.all.3class.distsim.crf.ser.gz')
-        # namedEntities = stanfordTagger.tag(tokenizedText)
-        # # dateEntities = collapse_entities(namedEntities, 'DATE')
-        # # dateEntities = split_dates(dateEntities)
-        # # print('Dates for {}:\n'.format(labeled_site['link']), dateEntities)
-        # namedEntities = [entity for entity in namedEntities if entity[1] != 'O']
+        tokenizedText = nltk.word_tokenize(txt)
+        stanfordTagger = StanfordNERTagger(model_filename='english.all.3class.distsim.crf.ser.gz')
+        namedEntities = stanfordTagger.tag(tokenizedText)
+        # dateEntities = collapse_entities(namedEntities, 'DATE')
+        # dateEntities = split_dates(dateEntities)
+        # print('Dates for {}:\n'.format(labeled_site['link']), dateEntities)
+        namedEntities = [entity for entity in namedEntities if entity[1] != 'O']
         # dateEntities = self._extract_first_entity(namedEntities, 'DATE')
         spacy_doc = nlp(txt)
         # date_features = extract_date_features(spacy_doc)
         # labeled_features = label_date_features(date_features, labeled_site)
 
-        # # date_locations = self._extract_dates(txt)
-        #
-        # # Found on http://emailregex.com/
-        # self.email = self._extract_first_email(txt)
-        #
-        # # TODO: Extract organization from the page's copyright notice in our actual event extractor?
-        # # organizations = [tag for tag in namedEntities if tag[1] == 'ORGANIZATION']
-        # self.people = [tag for tag in namedEntities if tag[1] == 'PERSON']
-        #
-        # # Location: take the first entity tagged with LOCATION
-        # self.location = self._extract_first_entity(namedEntities, 'LOCATION')
-        #
-        # # conference = ['conference', 'association']
-        #
-        # abstractDate = ['abstract', 'summary', 'proposal']
-        # paperDate = ['paper', 'final']
-        # conferenceDate = ['conference', 'event', 'time', 'held', 'hosted']
-        # host = ['host']
-        #
-        # conference = self._extract_first_entity(namedEntities, 'ORGANIZATION')
-        # if conference is not None and len(conference) > 0:
-        #     self.conference = conference
-        # self.topics = self._extract_topics(self.webpage.body)
-        #
-        # self.dates = {}
-        # dates = self._extract_dates(txt)
-        # if len(dates) == 1:
-        #     self.dates = {'conference': list(dates)[0]}
-        # else:
-        #     dates = self._label_entities(txt, self._extract_dates(txt), [abstractDate, paperDate, conferenceDate])
-        #     for date, key in dates:
-        #         self.dates[key] = date
-        #         # for date in dates:
-        #         #     print(get_context(txt, date, 20))
-        # labeledLinks = self._get_labeled_links()
-        # self.email = []
-        # for link in labeledLinks:
-        #     linkLabel = link['label']
-        #     if self.submissionLink is None and linkLabel == 'submissionDate':
-        #         self.submissionLink = link['url']
-        #     elif linkLabel == 'faq':
-        #         self.importantLinks.append(link['url'])
-        #     elif linkLabel == 'email':
-        #         self.email.append(label_email_feature(link))
+        # date_locations = self._extract_dates(txt)
+
+        # Found on http://emailregex.com/
+        self.email = self._extract_first_email(txt)
+
+        # organizations = [tag for tag in namedEntities if tag[1] == 'ORGANIZATION']
+        self.people = [tag for tag in namedEntities if tag[1] == 'PERSON']
+
+        # Location: take the first entity tagged with LOCATION
+        self.location = self._extract_first_entity(namedEntities, 'LOCATION')
+
+        # conference = ['conference', 'association']
+
+        abstractDate = ['abstract', 'summary', 'proposal']
+        paperDate = ['paper', 'final']
+        conferenceDate = ['conference', 'event', 'time', 'held', 'hosted']
+        host = ['host']
+
+        conference = self._extract_first_entity(namedEntities, 'ORGANIZATION')
+        if conference is not None and len(conference) > 0:
+            self.conference = conference
+        self.topics = self._extract_topics(self.webpage.body)
+
+        self.dates = {}
+        dates = self._extract_dates(txt)
+        if len(dates) == 1:
+            self.dates = {'conference': list(dates)[0]}
+        else:
+            dates = self._label_entities(txt, self._extract_dates(txt), [abstractDate, paperDate, conferenceDate])
+            for date, key in dates:
+                self.dates[key] = date
+                # for date in dates:
+                #     print(get_context(txt, date, 20))
+        labeledLinks = self._get_labeled_links()
+        self.email = []
+        for link in labeledLinks:
+            linkLabel = link['label']
+            if self.submissionLink is None and linkLabel == 'submissionDate':
+                self.submissionLink = link['url']
+            elif linkLabel == 'faq':
+                self.importantLinks.append(link['url'])
+            elif linkLabel == 'email':
+                self.email.append(label_email_feature(link))
 
     def _extract_first_entity(self, ner, entity):
         start = False
@@ -434,53 +433,3 @@ def entity_is_years_list(entity: str):
         is_years = True
         print('Entity matches year pattern:', entity)
     return is_years
-
-
-# text = '''
-# IEEE 11th International Symposium on Embedded Multicore/Many-core Systems-on-Chip (MCSoC-2017)
-# Korea University, Seoul, Korea, September 18-20, 2017
-# Main menu
-# Skip to primary content
-# Skip to secondary content
-# MCSoC-2017
-# Committee
-# Submission
-# Registration
-# Program
-# Venue/Accommodation/Visa
-# Program Commitee
-# Contact
-# MCSoC-2017
-# The 11th IEEE MCSoC-2017 (11th IEEE International Symposium on Embedded Multicore/Many-core Systems-on-Chip) aims at providing the  world’s premier forum of leading  researchers in the embedded Multicore/Many-core SoCs software, tools and  applications design areas for Academia and industries. Prospective authors are invited to submit paper of their works. Submission of a paper implies that at least one of the authors will have a full registration to the symposium upon  acceptance of the paper.
-#
-#
-#
-# Program Tracks
-#
-# Programming: Compilers, automatic code generation methods, cross assemblers, programming models, memory management, runtime management, object-oriented aspects, concurrent software.
-# Architectures: Multicore, Many-core, re-configurable platforms, memory management support, communication, protocols, real-time systems, SoCs and DSPs, heterogeneous architectures with HW accelerators and GPUs.
-# Design: Hardware specification, modeling, synthesis, low power simulation and analysis, reliability, variability compensation, thermal aware design, performance modeling, security issues.
-# Interconnection Networks: Electronic/Photonic/RF NoC architectures, Power and energy issues in NoCs, Application specific NoC design, Timing, Synchronous /asynchronous communication, RTOS support for NoCs, Modeling, simulation, NoC support for MCSoC, NoC for FPGAs and structured ASICs, NoC design tools, Photonic components, Virtual fabrications, Photonic circuits, Routing, Filter design.
-# Testing: Design-for-test, Test synthesis, Built-in-self-test, Embedded test for MCSoC.
-# Packaging Technologies: 3D VLSI packaging Technology, Vertical Interconnections in 3D Electronics, Periphery Interconnection between Stacked ICs, Area Interconnection between Stacked ICs, Thermal management schemes.
-# Real-Time Systems: real-time system design, RTOS, Compilation techniques, Memory/cache optimization, Interfacing and software issues, Distributed real-time systems, real-time kernels, Task scheduling, Multitasking design.
-# Benchmarks: Parallel Benchmarks, Workload characterization and evaluation
-# Applications: Bio-medical, Health-care, Computational biology, Internet of Things, Smart Mobility, Electric Vehicles, Aviation, Automobile, Military, and Consumer electronics.
-# Special Sessions
-#
-# Special Session on Auto-Tuning for Multicore and GPU
-# more to be listed here.
-# Important Dates
-#
-# Paper submission: April 15, 2017
-# Acceptance notification: June 23, 2017
-# Camera ready paper: July 14, 2017
-# Proceedings Publication and Indexing
-# MCSoC-2017 proceedings will be published by IEEE Computer Society, which will be included in the Computer Society Digital Library CSDL and IEEE Xplore. All CPS conference publications are also submitted for indexing to EI’s Engineering  Information Index, Compendex, and ISI Thomson’s Scientific and Technical Proceedings, ISTP/ISI Proceedings, and ISI Thomson.
-# Special Issue
-# Authors of selected papers from IEEE MCSoC-2017 Symposium will be invited to submit extended versions of their papers to  the following journal/transaction for inclusion in special issue (TBC).
-# '''
-#
-#
-# extractor = EventExtractor(text, 'www.google.com')
-# print(extractor._extract_dates(text))

@@ -121,7 +121,7 @@ def isPdf(site):
     return html.startswith('%PDF')
 
 start = datetime.datetime.now()
-evaluator = CFPEvaluator('../wikicfp/output.json')
+evaluator = CFPEvaluator('../corpus/output.json')
 print('Results:', evaluator.evaluate(True))
 evaluator.printResults()
 print('Evaluated in {}'.format(datetime.datetime.now() - start))
