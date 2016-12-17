@@ -21,6 +21,8 @@ STANFORD_MODELS="<PATH_TO_PROJECT>/EventExtraction/libs/stanford-ner-2015-12-09/
 Assuming you have used pip to install the requirements, run the following:
     python3 -m spacy.en.download all
 
+For more information, see https://spacy.io/docs/usage/
+
 ## Running the baseline CFP extractor
 Navigate to the extraction subdirectory and run the following:
     python3 evaluation.py
