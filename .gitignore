@@ -1,8 +1,26 @@
 **/node_modules/
 extraction/html/
+extraction/resources
+**/*.txt
+
+**/__pycache__
 
 **/*.idea
 
 *.swp
 
 cpe582-eventextraction-5054f2680cd4.json
+
+# dependencies
+server/cfp-app/node_modules
+
+# testing
+cfp-app/coverage
+
+# production
+cfp-app/build
+
+# misc
+cfp-app/.DS_Store
+cfp-app/.env
+cfp-app/npm-debug.log
