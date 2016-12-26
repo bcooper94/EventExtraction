@@ -1,6 +1,0 @@
-beautifulsoup4
-spacy
-daterangeparser
-python-dateutil
-scipy
-requests

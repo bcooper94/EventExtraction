@@ -2,6 +2,10 @@
 extraction/html/
 extraction/resources
 **/*.txt
+**/*.log
+
+**/extraction/html
+**/extraction/resources
 
 **/__pycache__
 
