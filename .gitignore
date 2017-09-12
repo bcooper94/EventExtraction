@@ -2,6 +2,7 @@
 extraction/html/
 extraction/resources
 **/*.txt
+!**/requirements.txt
 **/*.log
 
 **/extraction/html
