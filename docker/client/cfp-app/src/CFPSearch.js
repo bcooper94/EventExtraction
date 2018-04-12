@@ -31,7 +31,6 @@ class CFPSearch extends Component {
 
       this.setState({cfpResults: resultList});
     }).catch((error) => {
-      // console.error(error);
       return error;
     });
   }
@@ -56,10 +55,6 @@ class CFPSearch extends Component {
 
     return (
       <div className="container">
-        <div className="jumbotron">
-          <h1 className="h1">Auto Call for Papers</h1>
-          <p>A work in progress to automatically retrieve call for papers from conference websites</p>
-        </div>
         <div>
           <SearchForm onSubmit={this.search}/>
         </div>
@@ -109,7 +104,7 @@ class SearchForm extends Component {
           <input type="text" className="form-control"
             placeholder="Search"
             value={this.state.value} onChange={this.handleChange} />
-          <button className="btn btn-primary" type="submit" value="Submit">Search</button>
+          <button className="btn btn-success" type="submit" value="Submit">Search</button>
         </div>
       </form>
     );

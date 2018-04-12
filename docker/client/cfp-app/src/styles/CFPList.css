@@ -1,0 +1,56 @@
+.cfp-list-item {
+  margin-top: 5px;
+  margin-bottom: 5px;
+}
+
+/* Bootstrap containers */
+@media (min-width: 1200px) {
+  .location-card {
+    max-width: 410px;
+  }
+}
+
+.location-card {
+  margin-bottom: 20px;
+  background-color: #fff;
+  box-shadow: 5px 10px #888888;
+}
+
+.location-card .card-location {
+	background: #050505;
+  color: #c7c4c4;
+  font-weight: bold;
+  padding: 6px;
+}
+
+.location-card .card-date {
+  background: #111111b7;
+  color: #fff;
+  text-align: center;
+}
+
+.location-card .card-date .month {
+  color: #fff;
+  font-size: 14pt;
+  font-weight: bold;
+}
+
+.location-card .card-date .day {
+  color: #fff;
+  font-size: 24pt;
+  font-weight: bolder;
+}
+
+.location-card .card-date .year {
+  color: rgba(255, 255, 255, 0.548);
+  font-size: 12pt;
+}
+
+.location-card .card-button-bar {
+	background: rgb(230, 186, 66);
+}
+
+/* .location-card .card-button-bar i {
+  background: #fff;
+  border-radius: 0;
+} */

@@ -30,6 +30,9 @@ class CFPClient:
             client = MongoClient(host=MONGO_HOST, port=MONGO_PORT)
         self.db = client[DB_NAME]
 
+    def list_cfps(self):
+        return [cfp.CFP(result).serialize() for result in self.db[CFP_COLLECTION].find()]
+
     def search_cfps(self, query: str):
         return [cfp.CFP(result).serialize()
                 for result in self.db[CFP_COLLECTION].find({'$text': {'$search': query}})]
@@ -113,8 +116,8 @@ def insert_corpus(jsonPath):
         with open('corpus.json', 'w') as outfile:
             for site in converted_sites:
                 outfile.write(json.dumps(site) + '\n')
-        # success = client.create_many_cfps(converted_sites)
-        # print(success)
+        success = client.create_many_cfps(converted_sites)
+        print(success)
 
 if __name__ == '__main__':
     insert_corpus('../corpus/output.json')

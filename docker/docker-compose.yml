@@ -8,11 +8,8 @@ services:
       - ./client/cfp-app:/client
   database:
     build: ./database
-#    image: mongo:3.4.0
     ports:
       - "27000:27017"
-#    entrypoint: [mongod --bind_ip 0.0.0.0 --port 27017, ./setup-indices.sh]
-#    entrypoint: mongod --bind_ip 0.0.0.0 --port 27017
     entrypoint: "./setup-db.sh"
   server:
     build: ./server
@@ -21,6 +18,6 @@ services:
     volumes:
       - ./server:/server
     working_dir: /server
-    entrypoint: "python -m flask run --host=0.0.0.0"
+    entrypoint: "node src/server.js"
     depends_on:
       - database

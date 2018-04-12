@@ -6,11 +6,15 @@
     "react-scripts": "0.8.4"
   },
   "dependencies": {
-    "react": "^15.4.1",
-    "react-dom": "^15.4.1",
+    "bootstrap": "^4.0.0",
+    "font-awesome": "^4.7.0",
+    "jquery-ajax": "^2.1.4",
     "moment": "^2.10.0",
-    "bootstrap": "^3.3.7",
-    "jquery-ajax": "^2.1.4"
+    "react": "^16.2.0",
+    "react-dom": "^16.2.0",
+    "react-lazyload": "^2.3.0",
+    "react-list": "^0.8.8",
+    "react-paginate": "^5.2.2"
   },
   "scripts": {
     "start": "react-scripts start",

@@ -4,6 +4,7 @@ extraction/resources
 **/*.txt
 !**/requirements.txt
 **/*.log
+**/package-lock.json
 
 **/extraction/html
 **/extraction/resources
@@ -17,15 +18,30 @@ extraction/resources
 cpe582-eventextraction-5054f2680cd4.json
 
 # dependencies
-server/cfp-app/node_modules
+docker/server/cfp-app/node_modules
 
 # testing
 cfp-app/coverage
 
 # production
-cfp-app/build
+docker/client/cfp-app/build
 
 # misc
-cfp-app/.DS_Store
-cfp-app/.env
-cfp-app/npm-debug.log
+docker/client/cfp-app/.DS_Store
+docker/client/cfp-app/.env
+docker/client/cfp-app/npm-debug.log
+/bin/
+
+# Eclipse
+.project
+.classpath
+
+# Atom
+.tags
+
+# VS Code
+.vscode
+.settings
+*.code-workspace
+*.tags
+*.tags_swap
