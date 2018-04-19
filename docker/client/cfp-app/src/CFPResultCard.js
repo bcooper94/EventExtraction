@@ -1,13 +1,18 @@
 import React, { Component } from 'react';
+import { Card, Row, Col, CardPanel } from 'react-materialize';
+import { Collapse } from 'react-bootstrap';
+
+import './styles/CFPResultCard.css';
 
 export default class CFPResultCard extends Component {
   constructor(props) {
     super(props);
+    this.state = { areDetailsVisible: false };
     this.onClickDetails = this.onClickDetails.bind(this);
   }
 
   onClickDetails() {
-    this.props.onClickDetails(this.props.cfp);
+    this.setState({ areDetailsVisible: !this.state.areDetailsVisible });
   }
 
   render() {
@@ -19,47 +24,41 @@ export default class CFPResultCard extends Component {
     if (cfp.startDate != null) {
       let conferenceDate = cfp.conferenceDate != null ? cfp.conferenceDate.format('MMM D YYYY') : 'Unknown Date';
       date = (
-        <div className="col-md-3 card-date">
-          <div className="row">
-            <div className="col-md-12 month">{conferenceDate.format('MMM')}</div>
+        <div className='col-md-3 card-date'>
+          <div className='row'>
+            <div className='col-md-12 month'>{conferenceDate.format('MMM')}</div>
           </div>
-          <div className="row">
-            <div className="col-md-12 day">{conferenceDate.format('D')}</div>
+          <div className='row'>
+            <div className='col-md-12 day'>{conferenceDate.format('D')}</div>
           </div>
-          <div className="row">
-            <div className="col-md-12 year">{conferenceDate.format('YYYY')}</div>
+          <div className='row'>
+            <div className='col-md-12 year'>{conferenceDate.format('YYYY')}</div>
           </div>
         </div>
       );
     } else {
-      date = <div className="col-md-3 card-date">Unknown</div>;
+      date = <div className='col-md-3 card-date'>Unknown</div>;
     }
 
     return (
-      <div className="container-fluid location-card">
-        <div className="row">
-          <div className="col-md-8 card-location">
-            <i className="fa fa-lg fa-map-marker"></i> {location}
-          </div>
-          <div className="col-md-4 card-button-bar">
-            <a href="#"><i className="fa fa-lg fa-edit" onClick={this.onClickDetails}></i></a>
-          </div>
-        </div>
-        <div className="row">
-          {date}
-          <div className="col-md-9">
-            <div className="row">
-              <div className="col-md-12">{name}</div>
-            </div>
-            <div className="row">
-              <div className="col-md-12">Submission Date</div>
-            </div>
-            <div className="row">
-              <div className="col-md-12">Email</div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <Col className='result-card' s={12} m={3}>
+        <Row className='dark-blue result-card-title'
+          onClick={this.onClickDetails}>
+          <h3>{location}</h3>
+        </Row>
+        <Row className='white'>
+          <Col m={12}>{name}</Col>
+        </Row>
+        <Row className='white'>
+          <Col m={12}>Submission Date</Col>
+        </Row>
+        <Row className='white'>
+          <Col m={12}>Email</Col>
+        </Row>
+        <Collapse in={this.state.areDetailsVisible}>
+          <div>Blah blah blah</div>
+        </Collapse>
+      </Col>
     );
   }
 }

@@ -45,6 +45,7 @@ export default class CFPHome extends Component {
       <Fragment>
         <TitleBar/>
         {activeWidget}
+        <footer className='footer'></footer>
       </Fragment>
     );
   }
